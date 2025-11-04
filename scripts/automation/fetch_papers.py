@@ -22,7 +22,16 @@ def load_config():
     config_path = plugin_dir / "config" / "config.yaml"
 
     with open(config_path, 'r') as f:
-        return yaml.safe_load(f)
+        config = yaml.safe_load(f)
+
+    # Validate research_root path
+    research_root = Path(config['paths']['research_root']).expanduser().resolve()
+    if not research_root.exists():
+        raise ValueError(f"research_root does not exist: {research_root}\nPlease check your config.yaml file.")
+    if not research_root.is_dir():
+        raise ValueError(f"research_root is not a directory: {research_root}\nPlease check your config.yaml file.")
+
+    return config
 
 def load_keywords():
     """Parse keywords.md and extract topics with their keywords"""

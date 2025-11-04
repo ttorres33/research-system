@@ -3,6 +3,7 @@ config/config.yaml
 config/keywords.md
 
 # Tracking files (auto-generated)
+.research-data/
 .seen_arxiv_papers.json
 .seen_scholar_papers.json
 .processed_pdfs.json
