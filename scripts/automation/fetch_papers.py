@@ -16,16 +16,20 @@ from serpapi import GoogleSearch
 
 def load_config():
     """Load configuration from config.yaml"""
+    # Plugin structure: scripts/automation/script.py -> config/config.yaml
     script_dir = Path(__file__).parent
-    config_path = script_dir / "config.yaml"
+    plugin_dir = script_dir.parent.parent  # Go up two levels to plugin root
+    config_path = plugin_dir / "config" / "config.yaml"
 
     with open(config_path, 'r') as f:
         return yaml.safe_load(f)
 
 def load_keywords():
     """Parse keywords.md and extract topics with their keywords"""
+    # Plugin structure: scripts/automation/script.py -> config/keywords.md
     script_dir = Path(__file__).parent
-    keywords_path = script_dir / "keywords.md"
+    plugin_dir = script_dir.parent.parent  # Go up two levels to plugin root
+    keywords_path = plugin_dir / "config" / "keywords.md"
 
     topics = {}
     current_topic = None

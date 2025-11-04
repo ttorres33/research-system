@@ -13,8 +13,10 @@ import hashlib
 
 def load_config():
     """Load configuration from config.yaml"""
+    # Plugin structure: scripts/automation/script.py -> config/config.yaml
     script_dir = Path(__file__).parent
-    config_path = script_dir / "config.yaml"
+    plugin_dir = script_dir.parent.parent  # Go up two levels to plugin root
+    config_path = plugin_dir / "config" / "config.yaml"
 
     with open(config_path, 'r') as f:
         return yaml.safe_load(f)
