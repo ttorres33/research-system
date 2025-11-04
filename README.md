@@ -2,14 +2,41 @@
 
 Automated research paper discovery, PDF monitoring, and AI-powered summarization for academic and technical literature.
 
+## Overview
+
+The Research System automates your research workflow in a simple daily cycle:
+
+1. **Automated Discovery** - The system searches arXiv and Google Scholar based on your topic/keyword list and creates a daily digest
+2. **Review & Save** - You review the digest and download PDFs of interesting papers to your topic's `Sources/` folder
+3. **Automatic Summarization** - The system detects new PDFs and generates summaries in the `Notes/` folder
+
+**Daily Workflow:**
+- **6 AM (Automated)**: System searches for new papers and creates today's digest
+- **9 AM (You)**: Run `/generate-research-digest` to see today's papers and any new summaries
+- **Throughout the day (You)**: Review digest → Download interesting PDFs to `[Topic]/Sources/`
+- **Evening (Automated)**: System detects new PDFs and queues them for summarization
+- **Next morning**: Run `/generate-research-digest` again → Get today's papers + yesterday's summaries
+
+**File Structure:**
+```
+research-directory/
+├── research-today.md           # YOUR daily starting point
+├── daily-digests/              # Newly discovered papers
+│   └── 2025-11-04.md
+├── [Topic Name]/               # One folder per research topic
+│   ├── Sources/                # YOU save PDFs here
+│   └── Notes/                  # SYSTEM saves summaries here
+└── .research-data/             # Tracking files (auto-managed)
+```
+
 ## Features
 
-- **Automated Discovery**: Daily searches of arXiv and weekly Google Scholar searches based on your research topics
-- **PDF Monitoring**: Automatically detects new PDFs in your research folders
-- **AI Summarization**: Generates concise bullet-point summaries of research papers
-- **Intelligent Filtering**: Removes irrelevant papers from large digests based on your business focus
-- **Flexible Integration**: Works standalone or integrates with task management systems
-- **Markdown-based**: Uses standard markdown files, works with any markdown editor (Obsidian support built-in)
+- **Automated Discovery**: Daily arXiv searches + weekly Google Scholar searches
+- **PDF Monitoring**: Automatically detects new PDFs you save to Sources/ folders
+- **AI Summarization**: Generates concise bullet-point summaries with semantic tags
+- **Intelligent Filtering**: Removes irrelevant papers based on your business focus
+- **Flexible Integration**: Works standalone or with task management systems
+- **Markdown-based**: Works with any markdown editor (Obsidian support built-in)
 
 ## Quick Start
 
