@@ -15,20 +15,21 @@ Automated research paper discovery, PDF monitoring, and AI-powered summarization
 
 ### 1. Install the Plugin
 
+**Option A: Claude Code Marketplace (Recommended)**
+
+In Claude Code, run:
+```
+/plugin marketplace add ttorres33/cc-plugins
+/plugin install research-system
+```
+
+**Option B: Manual Installation**
 ```bash
-# Clone or install via Claude Code plugin marketplace
 cd ~/.claude/plugins/
-git clone [repository-url] research-system
+git clone https://github.com/ttorres33/research-system.git
 ```
 
-### 2. Install Dependencies
-
-```bash
-cd research-system
-pip3 install -r requirements.txt
-```
-
-### 3. Run Setup Wizard
+### 2. Run Setup Wizard
 
 In Claude Code:
 ```
@@ -36,13 +37,14 @@ In Claude Code:
 ```
 
 The wizard will guide you through:
+- Installing Python dependencies (automated)
 - Configuring research directory location
 - Setting up research topics and keywords
 - Configuring filter criteria
 - Setting up automated cron jobs
 - Getting a SerpAPI key (optional, for Google Scholar)
 
-### 4. Wait for Papers or Run Manually
+### 3. Wait for Papers or Run Manually
 
 Papers are fetched automatically by cron job, or run manually:
 ```bash
@@ -50,7 +52,7 @@ cd scripts/automation
 python3 fetch_papers.py
 ```
 
-### 5. Process New Papers
+### 4. Process New Papers
 
 ```
 /generate-research-digest
@@ -122,14 +124,15 @@ See `config/README.md` for detailed configuration guide.
 
 - Python 3.8+
 - Claude Code (for summarization)
-- SerpAPI key (optional, for Google Scholar - free tier: 100 searches/month)
+- SerpAPI key (optional, for Google Scholar - free tier: 250 searches/month)
 
 ## API Usage
 
 - **arXiv**: Free and unlimited
-- **Google Scholar** (via SerpAPI): Free tier allows 100 searches/month
-  - With 50 keywords × 4 Sundays = ~200 searches/month
-  - Consider reducing keywords or upgrading plan if needed
+- **Google Scholar** (via SerpAPI): Free tier allows 250 searches/month
+  - Weekly searches only (Sundays)
+  - With 10 topics × 4 Sundays = ~40 searches/month
+  - Plenty of room for most research needs
 
 ## Tips
 
