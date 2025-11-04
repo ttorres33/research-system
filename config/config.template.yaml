@@ -25,9 +25,3 @@ filter:
   relevant_topics: []                   # Topics to keep (e.g., ["user research", "decision making"])
   irrelevant_topics: []                 # Topics to filter out (e.g., ["pure mathematics", "agriculture"])
   relevance_criteria: ""                # What makes a paper relevant (one sentence)
-
-integration:
-  create_task_files: false              # Create markdown task files for task management systems
-  tasks_dir: null                       # Where to create task files (absolute path, e.g., ~/Notes/Tasks/tasks)
-  scripts_dir: "scripts"                # Subdirectory for queue file (relative to tasks_dir parent)
-  queue_file: ".research-queue.json"    # Queue filename for task system integration

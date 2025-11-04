@@ -21,6 +21,9 @@ The Research System automates your research workflow in a simple daily cycle:
 ```
 research-directory/
 ├── research-today.md           # YOUR daily starting point
+├── research-today-archive/     # Historical research-today files
+│   ├── 2025-11-03.md
+│   └── 2025-11-04.md
 ├── daily-digests/              # Newly discovered papers
 │   └── 2025-11-04.md
 ├── [Topic Name]/               # One folder per research topic
@@ -85,6 +88,11 @@ python3 fetch_papers.py
 /generate-research-digest
 ```
 
+This command:
+- Archives yesterday's `research-today.md` to `research-today-archive/`
+- Generates summaries for new PDFs
+- Creates new `research-today.md` with today's papers and summaries
+
 ## Daily Workflow
 
 ### Morning (Automated)
@@ -117,20 +125,23 @@ python3 fetch_papers.py
 
 ```
 research-directory/
-├── daily-digests/              # Daily paper discovery results
+├── research-today.md           # Your daily starting point
+├── research-today-archive/     # Historical daily digests
 │   ├── 2025-11-03.md
-│   └── 2025-11-02-filtered.md
+│   └── 2025-11-02.md
+├── daily-digests/              # Daily paper discovery results
+│   ├── 2025-11-04.md
+│   └── 2025-11-03.md
 ├── .research-data/             # Tracking files and logs
+│   ├── .research-queue.json
 │   ├── .seen_arxiv_papers.json
 │   ├── .seen_scholar_papers.json
 │   ├── .processed_pdfs.json
-│   ├── .research-queue.json
 │   ├── fetch_papers.log
 │   └── monitor_sources.log
 ├── [Topic Folders]/            # One per research topic
 │   ├── Sources/                # Put PDFs here
 │   └── Notes/                  # Auto-generated summaries
-└── research-today.md           # Daily summary file
 ```
 
 ## Configuration

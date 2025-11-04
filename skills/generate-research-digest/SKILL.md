@@ -77,7 +77,21 @@ For each item in the queue:
    - Check if it's Sunday (no arXiv papers typically)
    - Inform user digest may not exist yet or suggest running fetch_papers.py
 
-## Step 6: Create research-today.md
+## Step 6: Archive Previous research-today.md
+
+Before creating the new file:
+
+1. Check if `research_root + "/research-today.md"` exists
+2. If it exists:
+   - Read the file
+   - Extract date from the first line: `# Research Digest - YYYY-MM-DD`
+   - Use regex or string parsing to get the date
+   - Create archive directory if needed: `research_root + "/research-today-archive"`
+   - Copy the file to: `research_root + "/research-today-archive/" + [extracted_date] + ".md"`
+   - Example: `research-today-archive/2025-11-03.md`
+3. If file doesn't exist or date extraction fails, skip archiving (first run)
+
+## Step 7: Create research-today.md
 
 1. Create file at `research_root + "/research-today.md"`
 2. **IMPORTANT: Use link format from config:**
@@ -150,7 +164,7 @@ Generated on 2025-11-03 10:30 AM
 Generated on 2025-11-03 10:30 AM
 ```
 
-## Step 7: Update Task Files (if applicable)
+## Step 8: Update Task Files (if applicable)
 
 If queue contained task file paths (not just PDF paths):
 
@@ -162,12 +176,12 @@ If queue contained task file paths (not just PDF paths):
    - Update body with link to summary (using config link format)
    - Write updated task file
 
-## Step 8: Clear Queue
+## Step 9: Clear Queue
 
 1. Write empty array `[]` to queue file
 2. This resets the queue for next run
 
-## Step 9: Report Results
+## Step 10: Report Results
 
 Inform the user:
 - Number of summaries generated
