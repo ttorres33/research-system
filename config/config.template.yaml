@@ -28,5 +28,6 @@ filter:
 
 integration:
   create_task_files: false              # Create markdown task files for task management systems
-  task_output_dir: null                 # Where to create task files (absolute path)
-  queue_file_path: null                 # External queue file location (for task system integration)
+  tasks_dir: null                       # Where to create task files (absolute path, e.g., ~/Notes/Tasks/tasks)
+  scripts_dir: "scripts"                # Subdirectory for queue file (relative to tasks_dir parent)
+  queue_file: ".research-queue.json"    # Queue filename for task system integration

@@ -143,10 +143,9 @@ def find_new_pdfs(research_root, processed_files):
 
     return new_pdfs
 
-def update_queue(queue_file, task_files):
+def update_queue(queue_file, task_files, tasks_dir):
     """Update the research queue file for /today command"""
     # Convert task paths to relative paths from Tasks directory
-    tasks_dir = Path("/Users/ttorres/Library/CloudStorage/Dropbox/Consulting/Notes/Tasks")
     queue = [str(task.relative_to(tasks_dir.parent)) for task in task_files]
 
     with open(queue_file, 'w') as f:
@@ -171,8 +170,23 @@ def main():
 
     print(f"Found {len(new_pdfs)} new PDF(s):")
 
-    # Create task files
-    tasks_dir = Path("/Users/ttorres/Library/CloudStorage/Dropbox/Consulting/Notes/Tasks/tasks")
+    # Check if task file creation is enabled
+    if not config['integration']['create_task_files']:
+        print("Note: Task file creation is disabled in config. Set integration.create_task_files to true to enable.")
+        # Still mark PDFs as processed to avoid repeated messages
+        for pdf, has_summary, pdf_id in new_pdfs:
+            print(f"  • {pdf.name} (task creation disabled)")
+            processed_files.add(pdf_id)
+        save_processed_files(tracking_file, processed_files)
+        return
+
+    # Get tasks directory from config
+    tasks_dir_config = config['integration'].get('tasks_dir')
+    if not tasks_dir_config:
+        print("Error: integration.tasks_dir not configured. Cannot create task files.")
+        return
+
+    tasks_dir = Path(tasks_dir_config).expanduser()
     tasks_dir.mkdir(parents=True, exist_ok=True)
 
     task_files = []
@@ -184,10 +198,11 @@ def main():
         # Only mark as processed after successful task creation
         processed_files.add(pdf_id)
 
-    # Update queue file for /today
-    queue_file = Path("/Users/ttorres/Library/CloudStorage/Dropbox/Consulting/Notes/Tasks") / config['paths']['scripts'] / config['paths']['queue_file']
-    queue_file.parent.mkdir(parents=True, exist_ok=True)
-    update_queue(queue_file, task_files)
+    # Update queue file for /today if configured
+    if config['integration'].get('queue_file'):
+        queue_file = Path(tasks_dir_config).expanduser().parent / config['integration']['scripts_dir'] / config['integration']['queue_file']
+        queue_file.parent.mkdir(parents=True, exist_ok=True)
+        update_queue(queue_file, task_files, tasks_dir)
 
     # Save processed files (now only after successful task creation)
     save_processed_files(tracking_file, processed_files)
