@@ -1,0 +1,24 @@
+{
+  "name": "research-system",
+  "version": "0.1.0",
+  "description": "Automated research paper discovery, PDF monitoring, and AI-powered summarization for academic and technical literature",
+  "author": "Teresa Torres",
+  "homepage": "https://github.com/ttorres/research-system",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ttorres/research-system"
+  },
+  "keywords": [
+    "research",
+    "papers",
+    "arxiv",
+    "google-scholar",
+    "summarization",
+    "pdf",
+    "automation"
+  ],
+  "license": "MIT",
+  "engines": {
+    "claude": ">=1.0.0"
+  }
+}

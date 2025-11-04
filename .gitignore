@@ -1,0 +1,51 @@
+# User configuration (never commit API keys!)
+config/config.yaml
+config/keywords.md
+
+# Tracking files (auto-generated)
+.seen_arxiv_papers.json
+.seen_scholar_papers.json
+.processed_pdfs.json
+.research-queue.json
+scripts/**/.seen_*.json
+scripts/**/.processed_*.json
+
+# Logs
+*.log
+scripts/**/*.log
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Test data
+test_research/

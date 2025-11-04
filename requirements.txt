@@ -1,0 +1,7 @@
+# Research Automation Dependencies
+
+arxiv==2.1.3              # arXiv API client
+feedparser==6.0.11        # RSS/Atom feed parsing (arxiv dependency)
+google-search-results==2.4.2  # SerpAPI client for Google Scholar
+PyYAML==6.0.1             # Config file parsing
+pypdf==6.1.1              # PDF processing for summaries
