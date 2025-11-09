@@ -10,25 +10,25 @@ When invoked, generate summaries for new research papers and create a daily dige
 
 ## Step 1: Load Configuration
 
-1. Find the plugin installation directory (check for .claude-plugin/plugin.json)
-2. Read `config/config.yaml` from plugin directory
-3. Extract key paths:
+1. Read `~/.claude/research-system-config/config.yaml`
+2. Extract key paths:
    - `paths.research_root` - base directory for research files
    - `paths.daily_digests` - where digests are stored (relative to research_root)
    - `paths.data` - where tracking/queue files are stored (relative to research_root)
    - `links.format` - "obsidian" or "markdown" for link format
 
-4. Set working paths:
+3. Set working paths:
    - `digest_dir = research_root + "/" + daily_digests`
    - `data_dir = research_root + "/" + data`
    - `queue_file = data_dir + "/.research-queue.json"`
-   - `plugin_dir = [directory containing .claude-plugin/plugin.json]`
 
-## Step 2: Get Today's Date
+## Step 2: Locate Plugin Directory and Get Today's Date
 
-1. Run: `python3 {plugin_dir}/scripts/utilities/calculate_dates.py`
-2. Parse output to extract today's date in YYYY-MM-DD format
-3. Store as `today_date`
+1. Find the plugin installation directory (check for `.claude-plugin/plugin.json` in parent directories)
+2. Store as `plugin_dir`
+3. Run: `python3 {plugin_dir}/scripts/utilities/calculate_dates.py`
+4. Parse output to extract today's date in YYYY-MM-DD format
+5. Store as `today_date`
 
 ## Step 3: Read Research Queue
 

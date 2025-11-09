@@ -138,7 +138,7 @@ Store as `relevance_criteria`
 
 ## Step 5: Create Configuration Files
 
-### Create config/config.yaml
+### Create ~/.claude/research-system-config/config.yaml
 
 ```yaml
 # Research Automation Configuration
@@ -175,9 +175,10 @@ integration:
   queue_file_path: null
 ```
 
-Write to `{plugin_dir}/config/config.yaml`
+1. Create directory: `mkdir -p ~/.claude/research-system-config`
+2. Write to `~/.claude/research-system-config/config.yaml`
 
-### Create config/keywords.md
+### Create {research_root}/.research-data/keywords.md
 
 ```markdown
 # Research Keywords
@@ -189,7 +190,7 @@ Write to `{plugin_dir}/config/config.yaml`
 
 ```
 
-Write to `{plugin_dir}/config/keywords.md`
+Write to `{research_root}/.research-data/keywords.md`
 
 ## Step 6: Create Directory Structure
 
@@ -276,7 +277,7 @@ Cron Jobs:
 - PDF monitoring: Daily at [monitor_time]
 
 Next Steps:
-1. Customize keywords: edit [plugin_dir]/config/keywords.md
+1. Customize keywords: edit [research_root]/.research-data/keywords.md
 2. Wait for first paper fetch (tomorrow at [fetch_time])
    OR run manually: cd [plugin_dir]/scripts/automation && python3 fetch_papers.py
 3. Download PDFs of interest to topic Sources/ folders
@@ -284,8 +285,8 @@ Next Steps:
 5. Run /filter-research-digest on Sunday digests to remove irrelevant papers
 
 Files Created:
-- [plugin_dir]/config/config.yaml
-- [plugin_dir]/config/keywords.md
+- ~/.claude/research-system-config/config.yaml
+- [research_root]/.research-data/keywords.md
 - [research_root]/.research-data/ (tracking directory)
 - [count] topic folders in [research_root]
 

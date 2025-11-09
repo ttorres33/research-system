@@ -16,10 +16,15 @@ from serpapi import GoogleSearch
 
 def load_config():
     """Load configuration from config.yaml"""
-    # Plugin structure: scripts/automation/script.py -> config/config.yaml
-    script_dir = Path(__file__).parent
-    plugin_dir = script_dir.parent.parent  # Go up two levels to plugin root
-    config_path = plugin_dir / "config" / "config.yaml"
+    # Config stored outside plugin directory to survive updates
+    config_path = Path.home() / ".claude" / "research-system-config" / "config.yaml"
+
+    if not config_path.exists():
+        raise FileNotFoundError(
+            f"Config file not found at {config_path}\n"
+            f"Please create ~/.claude/research-system-config/config.yaml\n"
+            f"See the plugin's config/config.template.yaml for reference."
+        )
 
     with open(config_path, 'r') as f:
         config = yaml.safe_load(f)
@@ -33,12 +38,16 @@ def load_config():
 
     return config
 
-def load_keywords():
+def load_keywords(research_root):
     """Parse keywords.md and extract topics with their keywords"""
-    # Plugin structure: scripts/automation/script.py -> config/keywords.md
-    script_dir = Path(__file__).parent
-    plugin_dir = script_dir.parent.parent  # Go up two levels to plugin root
-    keywords_path = plugin_dir / "config" / "keywords.md"
+    # Keywords stored in research root's .research-data directory
+    keywords_path = Path(research_root) / ".research-data" / "keywords.md"
+
+    if not keywords_path.exists():
+        raise FileNotFoundError(
+            f"Keywords file not found at {keywords_path}\n"
+            f"Please run /setup-research-automation to create keywords file."
+        )
 
     topics = {}
     current_topic = None
@@ -286,7 +295,8 @@ def main():
     config = load_config()
 
     # Load keywords by topic
-    topics = load_keywords()
+    research_root = config['paths']['research_root']
+    topics = load_keywords(research_root)
 
     print(f"Found {len(topics)} topics with keywords", flush=True)
 

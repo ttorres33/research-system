@@ -10,14 +10,13 @@ When invoked, help the user refine their filter criteria through an interactive 
 
 ## Step 1: Load Current Configuration
 
-1. Find the plugin installation directory
-2. Read `config/config.yaml`
-3. Extract current filter settings:
+1. Read `~/.claude/research-system-config/config.yaml`
+2. Extract current filter settings:
    - `filter.business_focus`
    - `filter.relevant_topics`
    - `filter.irrelevant_topics`
    - `filter.relevance_criteria`
-4. Extract paths:
+3. Extract paths:
    - `paths.research_root`
    - `paths.daily_digests`
 
@@ -103,9 +102,9 @@ Based on interview responses:
 
 ## Step 7: Update config.yaml
 
-1. Read the config file
+1. Read `~/.claude/research-system-config/config.yaml`
 2. Update the filter section with new values
-3. Write the updated config back to file
+3. Write the updated config back to `~/.claude/research-system-config/config.yaml`
 4. Preserve all other config sections unchanged
 
 **Example update:**

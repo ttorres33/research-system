@@ -12,10 +12,15 @@ from pathlib import Path
 
 def load_config():
     """Load configuration from config.yaml"""
-    # Plugin structure: scripts/automation/script.py -> config/config.yaml
-    script_dir = Path(__file__).parent
-    plugin_dir = script_dir.parent.parent  # Go up two levels to plugin root
-    config_path = plugin_dir / "config" / "config.yaml"
+    # Config stored outside plugin directory to survive updates
+    config_path = Path.home() / ".claude" / "research-system-config" / "config.yaml"
+
+    if not config_path.exists():
+        raise FileNotFoundError(
+            f"Config file not found at {config_path}\n"
+            f"Please create ~/.claude/research-system-config/config.yaml\n"
+            f"See the plugin's config/config.template.yaml for reference."
+        )
 
     with open(config_path, 'r') as f:
         config = yaml.safe_load(f)

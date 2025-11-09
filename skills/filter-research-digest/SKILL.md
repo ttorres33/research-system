@@ -10,18 +10,16 @@ When invoked, filter a research digest to show only papers relevant to the user'
 
 ## Step 1: Load Configuration
 
-1. Find the plugin installation directory (check for .claude-plugin/plugin.json)
-2. Read `config/config.yaml` from plugin directory
-3. Extract filter criteria:
+1. Read `~/.claude/research-system-config/config.yaml`
+2. Extract filter criteria:
    - `filter.business_focus` - user's business domain (e.g., "product management and discovery")
    - `filter.relevant_topics` - array of topics to keep
    - `filter.irrelevant_topics` - array of topics to filter out
    - `filter.relevance_criteria` - description of what makes a paper relevant
-4. Extract paths:
+3. Extract paths:
    - `paths.research_root` - base directory
    - `paths.daily_digests` - where digests are stored
-   - `plugin_dir` - plugin installation directory
-5. Extract link format:
+4. Extract link format:
    - `links.format` - "obsidian" or "markdown"
 
 ## Step 2: Identify Digest to Filter
