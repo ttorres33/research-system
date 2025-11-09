@@ -108,7 +108,34 @@ Filtered on [timestamp]
 3. Use link format from config for any internal links
 4. Write the filtered digest file
 
-## Step 6: Report Results
+## Step 6: Update research-today.md
+
+1. Check if `research_root + "/research-today.md"` exists
+2. If it exists:
+   - Read the file
+   - Find the "## Today's Papers" section
+   - Add a link to the filtered digest below the original digest link
+   - Use the config link format (obsidian or markdown)
+
+**Example update (Obsidian format):**
+```markdown
+## Today's Papers
+
+[[daily-digests/2025-11-09]]
+[[daily-digests/2025-11-09-filtered]] - Filtered (47 papers, 81% removed)
+```
+
+**Example update (Markdown format):**
+```markdown
+## Today's Papers
+
+[View Today's Digest](daily-digests/2025-11-09.md)
+[Filtered Digest](daily-digests/2025-11-09-filtered.md) - 47 papers, 81% removed
+```
+
+3. If research-today.md doesn't exist, skip this step (user hasn't run generate-research-digest yet)
+
+## Step 7: Report Results
 
 Inform the user:
 - Original paper count

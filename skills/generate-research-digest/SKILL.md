@@ -159,6 +159,11 @@ Before creating the new file:
 - If obsidian: [[daily-digests/YYYY-MM-DD]]
 - If markdown: [View Today's Digest](daily-digests/YYYY-MM-DD.md)
 
+[Check if filtered digest exists: daily-digests/YYYY-MM-DD-filtered.md]
+[If filtered digest exists, add a second link on the next line]
+- If obsidian: [[daily-digests/YYYY-MM-DD-filtered]] - Filtered
+- If markdown: [Filtered Digest](daily-digests/YYYY-MM-DD-filtered.md)
+
 ## Newly Summarized Papers
 
 [For each newly generated summary, create link using config link format:]
@@ -178,13 +183,14 @@ Generated on [timestamp]
 
 3. Write the file
 
-**Example with Obsidian links:**
+**Example with Obsidian links (with filtered digest):**
 ```markdown
 # Research Digest - 2025-11-03
 
 ## Today's Papers
 
 [[daily-digests/2025-11-03]]
+[[daily-digests/2025-11-03-filtered]] - Filtered
 
 ## Newly Summarized Papers
 
@@ -196,13 +202,14 @@ Generated on [timestamp]
 Generated on 2025-11-03 10:30 AM
 ```
 
-**Example with Markdown links:**
+**Example with Markdown links (with filtered digest):**
 ```markdown
 # Research Digest - 2025-11-03
 
 ## Today's Papers
 
 [View Today's Digest](daily-digests/2025-11-03.md)
+[Filtered Digest](daily-digests/2025-11-03-filtered.md)
 
 ## Newly Summarized Papers
 
