@@ -10,33 +10,22 @@ The Research System automates your research workflow in a simple daily cycle:
 2. **Review & Save** - You review the digest and download PDFs of interesting papers to your topic's `Sources/` folder
 3. **Automatic Summarization** - The system detects new PDFs and generates summaries in the `Notes/` folder
 
-**Daily Workflow:**
-- **6 AM (Automated)**: System searches for new papers and creates today's digest
-- **9 AM (You)**: Run `/generate-research-digest` to see today's papers and any new summaries
-- **Throughout the day (You)**: Review digest → Download interesting PDFs to `[Topic]/Sources/`
+**Sample Daily Workflow:**
+- **Morning (Automated)**: System searches for new papers and creates today's digest
+- **When you start work**: Run `/generate-research-digest` to see today's papers and any new summaries
+- **Throughout the day**: Review digest → Download interesting PDFs to `[Topic]/Sources/`
 - **Evening (Automated)**: System detects new PDFs and queues them for summarization
-- **Next morning**: Run `/generate-research-digest` again → Get today's papers + yesterday's summaries
+- **Next day**: Run `/generate-research-digest` again → Get today's papers + yesterday's summaries
 
-**File Structure:**
-```
-research-directory/
-├── research-today.md           # YOUR daily starting point
-├── research-today-archive/     # Historical research-today files
-│   ├── 2025-11-03.md
-│   └── 2025-11-04.md
-├── daily-digests/              # Newly discovered papers
-│   └── 2025-11-04.md
-├── [Topic Name]/               # One folder per research topic
-│   ├── Sources/                # YOU save PDFs here
-│   └── Notes/                  # SYSTEM saves summaries here
-└── .research-data/             # Tracking files (auto-managed)
-```
+*Note: Timing is fully customizable during setup. Schedule the automated tasks (paper discovery and PDF monitoring) whenever works best for your workflow.*
 
 ## Features
 
 - **Automated Discovery**: Daily arXiv searches + weekly Google Scholar searches
 - **PDF Monitoring**: Automatically detects new PDFs you save to Sources/ folders
 - **AI Summarization**: Generates concise bullet-point summaries with semantic tags
+- **Large PDF Handling**: Automatically splits papers ≥5 MB into sections to avoid context overflow
+- **Conference Proceedings Support**: Extract individual papers from multi-paper proceedings
 - **Intelligent Filtering**: Removes irrelevant papers based on your business focus
 - **Flexible Integration**: Works standalone or with task management systems
 - **Markdown-based**: Works with any markdown editor (Obsidian support built-in)
@@ -93,23 +82,21 @@ This command:
 - Generates summaries for new PDFs
 - Creates new `research-today.md` with today's papers and summaries
 
-## Daily Workflow
+## Sample Daily Workflow
 
-### Morning (Automated)
-- 6 AM: `fetch_papers.py` searches arXiv (daily) and Google Scholar (Sundays)
-- Creates digest in `daily-digests/YYYY-MM-DD.md`
+*Note: The timing below is just one example. During setup, you choose when each automated task runs to fit your schedule.*
 
-### Your Morning
+### Automated Tasks
+- **Paper Discovery** (`fetch_papers.py`): Searches arXiv (daily) and Google Scholar (Sundays), creates digest in `daily-digests/YYYY-MM-DD.md`
+- **PDF Monitoring** (`monitor_sources.py`): Scans for new PDFs, creates queue for summary generation
+
+### Your Workflow
 1. Run `/generate-research-digest` to:
    - Generate summaries for new PDFs
    - Create research-today.md with links
 2. Review the digest and download interesting PDFs to topic folders
 
-### Evening (Automated)
-- 6 PM: `monitor_sources.py` scans for new PDFs
-- Creates queue for tomorrow's summary generation
-
-### Sunday Special
+### Sunday Special (Google Scholar Day)
 - Large digest (~200-300 papers from Google Scholar)
 - Run `/filter-research-digest` to remove irrelevant papers
 - If still too many, run `/update-research-filters` to refine criteria
@@ -117,9 +104,50 @@ This command:
 ## Commands
 
 - `/generate-research-digest` - Generate summaries and create today's digest
+- `/research-summary` - Generate summary for a single PDF (handles large PDFs automatically)
+- `/split-conference-pdf` - Split conference proceedings into individual papers
 - `/filter-research-digest` - Filter digest by relevance
 - `/update-research-filters` - Interactively refine filter criteria
 - `/setup-research-automation` - Configuration wizard
+
+## Working with Large PDFs and Conference Proceedings
+
+### Large Paper Handling
+
+The system automatically handles large papers (≥5 MB) by:
+1. Detecting file size before processing
+2. Splitting into sections using PDF structure (outline/bookmarks) or standard academic sections
+3. Processing each section separately to avoid context overflow
+4. Cleaning up temporary files after summarization
+
+This happens automatically in both:
+- `/generate-research-digest` (automated queue processing)
+- `/research-summary` (manual single-paper summarization)
+
+**No action needed** - large PDFs just work!
+
+### Conference Proceedings
+
+If you download conference proceedings containing multiple papers:
+
+1. **Split the proceedings:**
+   ```
+   /split-conference-pdf ~/Downloads/proceedings.pdf
+   ```
+
+2. **Review extracted papers** in the output directory
+
+3. **Save desired papers** to your topic's `Sources/` folder
+   ```
+   cp split_papers/03_Interesting_Paper.pdf ~/Research/AI/Sources/
+   ```
+
+4. **Run digest generation** to summarize them
+   ```
+   /generate-research-digest
+   ```
+
+**Note:** Conference splitting requires the PDF to have embedded bookmarks/table of contents.
 
 ## Directory Structure
 

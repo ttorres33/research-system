@@ -42,39 +42,89 @@ When invoked, generate summaries for new research papers and create a daily dige
 
 For each item in the queue:
 
-1. **Determine if it's a task file or PDF path:**
-   - If path ends with `.md` → it's a task file (contains metadata about PDF)
-   - If path ends with `.pdf` → it's a direct PDF path
-
-2. **Extract PDF path:**
-   - If task file: Read the file, extract `source_path` from frontmatter
-   - If PDF: Use the path directly
-
-3. **Verify PDF exists:**
+1. **Verify PDF exists:**
    - Check if file exists at the PDF path
    - If not found, skip with warning and continue
 
-4. **Check if summary already exists:**
+2. **Check if summary already exists:**
    - Determine summary path: same as PDF but in `Notes/` folder instead of `Sources/` and `.md` extension
    - Example: `Research/AI & Productivity/Sources/paper.pdf` → `Research/AI & Productivity/Notes/paper.md`
    - If summary exists, skip (already processed)
 
-5. **Generate summary using research-summarizer agent:**
-   - Use Task tool to spawn research-summarizer agent
-   - Pass PDF path as parameter
-   - Agent will create summary in appropriate Notes/ folder
-   - Wait for agent to complete
+3. **Extract paper metadata:**
+   - Read first 2 pages of PDF to extract:
+     - Paper title (usually in header/title block)
+     - Publication date (if available)
+   - Store for use in final summary
 
-6. **Track processed items:**
+4. **Check PDF size and conditionally process:**
+   - Get file size in bytes: `stat -f%z "$pdf_path"`
+   - Calculate output path: change `Sources/file.pdf` to `Notes/file.md`
+
+   **If size ≥ 5242880 bytes (5 MB) - Large PDF:**
+   - Generate unique timestamp: `date +%s`
+   - Create temp directories:
+     - Section PDFs: `/tmp/research-sections-{timestamp}`
+     - Section summaries: `/tmp/research-summaries-{timestamp}`
+   - Run: `python3 {plugin_dir}/scripts/utilities/split_pdf_by_sections.py "$pdf_path" "/tmp/research-sections-{timestamp}"`
+     - This splits PDF into section files (000_Introduction.pdf, 001_Methods.pdf, etc.)
+   - List section PDF files in numerical order
+   - For each section PDF, spawn a research-summarizer agent IN PARALLEL:
+     - PDF path: `/tmp/research-sections-{timestamp}/00X_SectionName.pdf`
+     - Output path: `/tmp/research-summaries-{timestamp}/00X_SectionName.md`
+   - Wait for all agents to complete
+   - Aggregate section summaries:
+     - Extract tags from all section summary files (read only frontmatter):
+       ```bash
+       grep "^tags:" /tmp/research-summaries-{timestamp}/*.md
+       ```
+     - Combine and deduplicate tags, keep top 5-10 most relevant
+     - Create final frontmatter header using metadata from step 3:
+       ```markdown
+       ---
+       tags: [aggregated, deduplicated, tags]
+       ---
+
+       # Paper Title
+
+       Publication Date: [if found]
+
+       ```
+     - Write frontmatter to output path in Notes/ folder
+     - Use bash to append all section summaries (strip their frontmatter):
+       ```bash
+       for file in /tmp/research-summaries-{timestamp}/*.md; do
+         sed '1,/^---$/d; 1,/^---$/d' "$file" >> "$output_path"
+       done
+       ```
+   - Cleanup: `rm -rf "/tmp/research-sections-{timestamp}" "/tmp/research-summaries-{timestamp}"`
+
+   **If size < 5242880 bytes (5 MB) - Small PDF:**
+   - Create temp file for summary: `/tmp/research-summary-{timestamp}.md`
+   - Spawn single research-summarizer agent:
+     - PDF path: `$pdf_path`
+     - Output path: `/tmp/research-summary-{timestamp}.md`
+   - Wait for agent to complete
+   - Extract tags from agent's summary file (read only frontmatter)
+   - Create final summary at output path:
+     - Write frontmatter with tags from agent
+     - Add paper title as `# Title` using metadata from step 3
+     - Add publication date using metadata from step 3
+     - Append agent's summary content (strip the frontmatter from temp file):
+       ```bash
+       sed '1,/^---$/d; 1,/^---$/d' /tmp/research-summary-{timestamp}.md >> "$output_path"
+       ```
+   - Cleanup: `rm "/tmp/research-summary-{timestamp}.md"`
+
+5. **Track processed items:**
    - Keep list of newly generated summaries (PDF path → summary path)
    - Keep list of skipped items (with reasons)
 
-## Step 5: Find Today's Digest
+## Step 5: Find Today's Daily Digest
 
 1. Construct digest path using `today_date`: `digest_dir + "/" + today_date + ".md"`
 2. Check if today's digest exists
 3. If not found:
-   - Check if it's Sunday (no arXiv papers typically)
    - Inform user digest may not exist yet or suggest running fetch_papers.py
 
 ## Step 6: Archive Previous research-today.md
@@ -164,24 +214,12 @@ Generated on 2025-11-03 10:30 AM
 Generated on 2025-11-03 10:30 AM
 ```
 
-## Step 8: Update Task Files (if applicable)
-
-If queue contained task file paths (not just PDF paths):
-
-1. For each successfully processed task file:
-   - Read the task file
-   - Update frontmatter:
-     - Change `tags: [research-summary-needed]` to `tags: [research-review]`
-     - Add `summary_path: "[path to generated summary]"`
-   - Update body with link to summary (using config link format)
-   - Write updated task file
-
-## Step 9: Clear Queue
+## Step 8: Clear Queue
 
 1. Write empty array `[]` to queue file
 2. This resets the queue for next run
 
-## Step 10: Report Results
+## Step 9: Report Results
 
 Inform the user:
 - Number of summaries generated
@@ -205,5 +243,4 @@ Inform the user:
 - Summaries are generated in parallel using Task tool for efficiency
 - The research-today.md file is regenerated each time (overwrites previous)
 - Queue is only cleared after successful processing of all items
-- Task file updates are optional (only if task files exist in queue)
 - **Always respect the link format setting** - this ensures compatibility with user's markdown viewer
