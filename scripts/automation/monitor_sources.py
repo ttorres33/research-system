@@ -100,10 +100,10 @@ def main():
     # Load configuration
     config = load_config()
     research_root = Path(config['paths']['research_root']).expanduser().resolve()
-    script_dir = Path(__file__).parent
+    data_dir = research_root / config['paths']['data']
 
     # Setup tracking
-    tracking_file = script_dir / '.processed_pdfs.json'
+    tracking_file = data_dir / '.processed_pdfs.json'
     processed_files = get_processed_files(tracking_file)
 
     # Find new PDFs

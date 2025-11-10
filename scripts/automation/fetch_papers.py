@@ -64,10 +64,11 @@ def load_keywords(research_root):
 
     return topics
 
-def load_seen_arxiv_papers():
+def load_seen_arxiv_papers(config):
     """Load previously seen arXiv papers from tracking file"""
-    script_dir = Path(__file__).parent
-    tracking_file = script_dir / ".seen_arxiv_papers.json"
+    research_root = Path(config['paths']['research_root']).expanduser().resolve()
+    data_dir = research_root / config['paths']['data']
+    tracking_file = data_dir / ".seen_arxiv_papers.json"
 
     if tracking_file.exists():
         with open(tracking_file, 'r') as f:
@@ -75,10 +76,11 @@ def load_seen_arxiv_papers():
             return set(data.get('urls', []))
     return set()
 
-def save_seen_arxiv_papers(seen_urls):
+def save_seen_arxiv_papers(config, seen_urls):
     """Save seen arXiv papers to tracking file"""
-    script_dir = Path(__file__).parent
-    tracking_file = script_dir / ".seen_arxiv_papers.json"
+    research_root = Path(config['paths']['research_root']).expanduser().resolve()
+    data_dir = research_root / config['paths']['data']
+    tracking_file = data_dir / ".seen_arxiv_papers.json"
 
     with open(tracking_file, 'w') as f:
         json.dump({
@@ -86,7 +88,7 @@ def save_seen_arxiv_papers(seen_urls):
             'last_updated': datetime.now().isoformat()
         }, f, indent=2)
 
-def search_arxiv(keywords, max_results=10, days_back=1):
+def search_arxiv(keywords, config, max_results=10, days_back=1):
     """Search arXiv for papers matching keywords"""
     # Search each keyword separately and combine results
     # This prevents overly broad OR queries
@@ -94,7 +96,7 @@ def search_arxiv(keywords, max_results=10, days_back=1):
     seen_urls = set()
 
     # Load previously seen papers to avoid duplicates across runs
-    previously_seen = load_seen_arxiv_papers()
+    previously_seen = load_seen_arxiv_papers(config)
 
     for i, keyword in enumerate(keywords, 1):
         print(f"  [arXiv {i}/{len(keywords)}] Searching: {keyword[:80]}...", flush=True)
@@ -149,14 +151,15 @@ def search_arxiv(keywords, max_results=10, days_back=1):
 
     # Save all seen URLs (merge with previously seen)
     all_seen = previously_seen.union(seen_urls)
-    save_seen_arxiv_papers(all_seen)
+    save_seen_arxiv_papers(config, all_seen)
 
     return all_papers
 
-def load_seen_papers():
+def load_seen_papers(config):
     """Load previously seen Google Scholar papers from tracking file"""
-    script_dir = Path(__file__).parent
-    tracking_file = script_dir / ".seen_scholar_papers.json"
+    research_root = Path(config['paths']['research_root']).expanduser().resolve()
+    data_dir = research_root / config['paths']['data']
+    tracking_file = data_dir / ".seen_scholar_papers.json"
 
     if tracking_file.exists():
         with open(tracking_file, 'r') as f:
@@ -164,10 +167,11 @@ def load_seen_papers():
             return set(data.get('urls', []))
     return set()
 
-def save_seen_papers(seen_urls):
-    """Save seen Google Scholar papers to tracking file"""
-    script_dir = Path(__file__).parent
-    tracking_file = script_dir / ".seen_scholar_papers.json"
+def save_seen_papers(config, seen_urls):
+    """Load previously seen Google Scholar papers from tracking file"""
+    research_root = Path(config['paths']['research_root']).expanduser().resolve()
+    data_dir = research_root / config['paths']['data']
+    tracking_file = data_dir / ".seen_scholar_papers.json"
 
     with open(tracking_file, 'w') as f:
         json.dump({
@@ -175,7 +179,7 @@ def save_seen_papers(seen_urls):
             'last_updated': datetime.now().isoformat()
         }, f, indent=2)
 
-def search_google_scholar(keywords, api_key, max_results=5, days_back=7):
+def search_google_scholar(keywords, config, api_key, max_results=5, days_back=7):
     """Search Google Scholar for papers matching keywords"""
     import re
 
@@ -185,7 +189,7 @@ def search_google_scholar(keywords, api_key, max_results=5, days_back=7):
     seen_urls = set()
 
     # Load previously seen papers to avoid duplicates across runs
-    previously_seen = load_seen_papers()
+    previously_seen = load_seen_papers(config)
     print(f"  [DEBUG] Loaded {len(previously_seen)} previously seen Google Scholar URLs", flush=True)
 
     # Calculate date range
@@ -243,7 +247,7 @@ def search_google_scholar(keywords, api_key, max_results=5, days_back=7):
     all_seen = previously_seen.union(seen_urls)
     print(f"  [DEBUG] Saving {len(all_seen)} total URLs ({len(previously_seen)} previous + {len(seen_urls)} new)", flush=True)
     print(f"  [DEBUG] Filtered out {len(previously_seen.intersection(seen_urls))} duplicate URLs during search", flush=True)
-    save_seen_papers(all_seen)
+    save_seen_papers(config, all_seen)
 
     return all_papers
 
@@ -313,7 +317,7 @@ def main():
         # Always search arXiv (daily)
         try:
             arxiv_days = config['arxiv'].get('days_back', 1)  # Default to 1 day
-            arxiv_papers = search_arxiv(keywords, config['arxiv']['max_results'], arxiv_days)
+            arxiv_papers = search_arxiv(keywords, config, config['arxiv']['max_results'], arxiv_days)
             papers.extend(arxiv_papers)
             print(f"  Found {len(arxiv_papers)} papers from arXiv", flush=True)
         except Exception as e:
@@ -324,6 +328,7 @@ def main():
             try:
                 scholar_papers = search_google_scholar(
                     keywords,
+                    config,
                     config['serpapi']['api_key'],
                     config['google_scholar']['max_results'],
                     config['google_scholar']['search_days']
