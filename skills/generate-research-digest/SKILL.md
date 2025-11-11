@@ -33,10 +33,11 @@ When invoked, generate summaries for new research papers and create a daily dige
 ## Step 3: Read Research Queue
 
 1. Check if queue file exists at `queue_file`
-2. If not found, inform user: "No research queue found. Run the monitor_sources.py cron job or manually add PDFs to your research directories."
+2. If not found, set `queue_missing = true` and `queue_items = []`
 3. If found, read the JSON file
 4. Parse the queue - it contains an array of task file paths or PDF paths needing summaries
-5. If queue is empty, inform user: "Research queue is empty. No new papers to process."
+5. Store the queue items count for final report
+6. **Continue to completion even if queue is empty - user needs final status report**
 
 ## Step 4: Process Each Queued Item
 
@@ -124,8 +125,8 @@ For each item in the queue:
 
 1. Construct digest path using `today_date`: `digest_dir + "/" + today_date + ".md"`
 2. Check if today's digest exists
-3. If not found:
-   - Inform user digest may not exist yet or suggest running fetch_papers.py
+3. Store status for final report: `digest_exists = true/false`
+4. **Continue to next step even if digest doesn't exist - will be noted in final report**
 
 ## Step 6: Archive Previous research-today.md
 
@@ -143,8 +144,9 @@ Before creating the new file:
 
 ## Step 7: Create research-today.md
 
-1. Create file at `research_root + "/research-today.md"`
-2. **IMPORTANT: Use link format from config:**
+1. **Always create this file** - even if there are no new summaries
+2. Create file at `research_root + "/research-today.md"`
+3. **IMPORTANT: Use link format from config:**
    - If `links.format` is "obsidian": Use `[[filename]]` format
    - If `links.format` is "markdown": Use `[text](relative/path/to/file.md)` format
 
@@ -155,6 +157,7 @@ Before creating the new file:
 
 ## Today's Papers
 
+[If digest_exists is true:]
 [Create link to today's digest using config link format]
 - If obsidian: [[daily-digests/YYYY-MM-DD]]
 - If markdown: [View Today's Digest](daily-digests/YYYY-MM-DD.md)
@@ -164,24 +167,34 @@ Before creating the new file:
 - If obsidian: [[daily-digests/YYYY-MM-DD-filtered]] - Filtered
 - If markdown: [Filtered Digest](daily-digests/YYYY-MM-DD-filtered.md)
 
+[If digest_exists is false:]
+No digest found for today. Run fetch_papers.py to retrieve today's papers.
+
 ## Newly Summarized Papers
 
+[If there are newly generated summaries:]
 [For each newly generated summary, create link using config link format:]
 - **[Topic Name]**:
   - If obsidian: [[Topic/Notes/paper-name]] - [Paper title]
   - If markdown: [Paper title](Topic/Notes/paper-name.md)
+
+[If no new summaries:]
+No new papers were summarized today.
 
 ## Papers Still Needing Review
 
 [If there were any skipped items:]
 - [PDF name]: [Reason skipped]
 
+[If no skipped items:]
+All queued papers have been processed.
+
 ---
 
 Generated on [timestamp]
 ```
 
-3. Write the file
+4. Write the file
 
 **Example with Obsidian links (with filtered digest):**
 ```markdown
@@ -223,26 +236,117 @@ Generated on 2025-11-03 10:30 AM
 
 ## Step 8: Clear Queue
 
-1. Write empty array `[]` to queue file
-2. This resets the queue for next run
+1. **Only clear queue if items were successfully processed**
+2. If queue file exists and any items were processed (successfully or skipped):
+   - Write empty array `[]` to queue file
+   - This resets the queue for next run
+3. If queue was missing, no action needed
 
 ## Step 9: Report Results
 
-Inform the user:
-- Number of summaries generated
-- Location of research-today.md file
-- Link to today's digest (if found)
-- Any warnings or skipped items
+**ALWAYS provide a comprehensive status report**, including:
+
+1. **Queue Status:**
+   - If queue was missing: "No research queue found. Run monitor_sources.py cron job or manually add PDFs."
+   - If queue was empty: "Research queue was empty."
+   - If queue had items: "Processed [X] items from queue."
+
+2. **Processing Summary:**
+   - Number of new summaries generated: "[X] papers summarized"
+   - Number already processed (skipped because summary exists): "[X] papers already had summaries"
+   - Number skipped due to errors: "[X] papers skipped" with brief reason
+   - If no items to process: "No papers needed processing."
+
+3. **Daily Digest Status:**
+   - If digest exists: "Today's digest available at: [path]"
+   - If digest doesn't exist: "No digest for today. Run fetch_papers.py to retrieve papers."
+   - If filtered digest exists: "Filtered digest also available."
+
+4. **Output Files:**
+   - Location of research-today.md file: "[full_path]"
+   - If previous research-today.md was archived: "Previous digest archived to: [archive_path]"
+
+5. **Next Steps (if applicable):**
+   - If digest missing: "Run fetch_papers.py to fetch today's papers from arXiv"
+   - If papers skipped: "Review skipped papers listed in research-today.md"
+   - If queue was missing: "Set up the cron job to automatically monitor sources"
+
+**Example comprehensive report:**
+```
+Research Digest Generation Complete
+
+Queue Status: Processed 3 items from queue
+
+Processing Summary:
+- 2 papers summarized successfully
+- 1 paper already had a summary (skipped)
+- 0 papers skipped due to errors
+
+Daily Digest Status:
+- Today's digest available at: /Users/user/Research/daily-digests/2025-11-11.md
+- Filtered digest also available
+
+Output Files:
+- research-today.md created at: /Users/user/Research/research-today.md
+- Previous digest archived to: research-today-archive/2025-11-10.md
+
+All papers processed successfully.
+```
+
+**Example when nothing to do:**
+```
+Research Digest Generation Complete
+
+Queue Status: Research queue was empty
+
+Processing Summary:
+- 0 papers summarized
+- No papers needed processing
+
+Daily Digest Status:
+- Today's digest available at: /Users/user/Research/daily-digests/2025-11-11.md
+
+Output Files:
+- research-today.md updated at: /Users/user/Research/research-today.md
+
+No new papers to process. System is up to date.
+```
+
+**Example when queue missing:**
+```
+Research Digest Generation Complete
+
+Queue Status: No research queue found
+
+Processing Summary:
+- 0 papers summarized
+- No papers to process
+
+Daily Digest Status:
+- No digest for today
+
+Output Files:
+- research-today.md updated at: /Users/user/Research/research-today.md
+
+Next Steps:
+- Run monitor_sources.py cron job to populate the queue
+- Or run fetch_papers.py to fetch today's papers from arXiv
+```
 
 ## Error Handling
 
-- **Queue file not found**: Inform user to run cron job or check setup
-- **PDF not found**: Skip with warning, continue processing others
-- **Summary generation fails**: Log error, skip that PDF, continue with others
-- **Config file not found**: Show error with setup instructions
-- **Permission errors**: Show clear error message with file path
-- **calculate_dates.py fails**: Fall back to system date command
-- **Invalid link format in config**: Default to obsidian format with warning
+- **Queue file not found**: Continue with empty queue, note in final report
+- **Queue empty**: Continue to completion, note in final report
+- **PDF not found**: Skip with warning, continue processing others, include in final report
+- **Summary generation fails**: Log error, skip that PDF, continue with others, include in final report
+- **Config file not found**: Show error with setup instructions, cannot continue
+- **Permission errors**: Show clear error message with file path, note in final report
+- **calculate_dates.py fails**: Fall back to system date command, continue
+- **Invalid link format in config**: Default to obsidian format with warning, continue
+- **Daily digest not found**: Note in research-today.md and final report, continue
+- **No new papers to process**: Complete successfully with informative report
+
+**Key principle: Always complete execution and provide comprehensive status report**
 
 ## Notes
 
