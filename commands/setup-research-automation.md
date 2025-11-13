@@ -1,25 +1,313 @@
 ---
-description: Interactive setup wizard for research automation system
+name: setup-research-automation
+description: Interactive setup wizard for configuring research automation system including paths, cron jobs, keywords, and filter criteria
+allowed-tools: [Read, Write, Bash, AskUserQuestion]
 ---
 
-Use the `research-setup` skill to configure the research automation system.
+# Setup Research Automation Command
 
-This guided setup will:
-1. Check Python dependencies are installed
-2. Ask where to store research papers
-3. Configure link format (Obsidian vs standard markdown)
-4. Set up cron job timing for paper fetching and PDF monitoring
-5. Collect your SerpAPI key for Google Scholar (optional)
-6. Help you define research topics and keywords
-7. Configure filter criteria for removing irrelevant papers
-8. Create all necessary configuration files
-9. Set up automated cron jobs
-10. Validate the setup with test runs
+Guide you through complete setup of the research automation system.
 
-After setup completes:
-- Papers will be fetched daily at your specified time
-- PDFs in your research folders will be monitored automatically
-- Run `/generate-research-digest` to process new papers
-- Run `/filter-research-digest` on Sundays to filter large digests
+## Step 1: Welcome and Detect Installation
 
-You can re-run this command to reconfigure the system at any time.
+1. Welcome user: "Welcome to Research System setup! I'll help you configure automated paper discovery and summarization."
+2. Find plugin installation directory (look for .claude-plugin/plugin.json)
+3. Store as `plugin_dir`
+4. Check Python dependencies:
+   - Run `pip3 list | grep -E "(arxiv|google-search-results|PyYAML|pypdf)"`
+   - If any missing, show installation command: `pip3 install -r {plugin_dir}/requirements.txt`
+
+## Step 2: Gather Basic Configuration
+
+Use AskUserQuestion to collect:
+
+### Question 1: Research Directory Location
+```
+Where should research papers be stored?
+- Option 1: ~/Research (create if doesn't exist)
+- Option 2: Current directory (.)
+- Option 3: Custom path (specify)
+```
+
+Store as `research_root`. If custom, validate path exists or offer to create it.
+
+### Question 2: Obsidian Usage
+```
+Are you using Obsidian to view your research notes?
+- Yes (use [[wiki-style]] links)
+- No (use standard markdown [links](path))
+```
+
+Set `link_format`:
+- Yes → "obsidian"
+- No → "markdown"
+
+### Question 3: Paper Fetch Time
+```
+What time should new papers be fetched daily?
+- 6 AM (recommended)
+- 8 AM
+- Custom time (specify in HH:MM format)
+```
+
+Store as `fetch_time` in cron format (e.g., "0 6" for 6 AM)
+
+### Question 4: PDF Monitoring Time
+```
+What time should PDFs be monitored for summaries?
+- 6 PM (recommended, after work day)
+- 8 PM
+- Custom time (specify in HH:MM format)
+```
+
+Store as `monitor_time` in cron format
+
+### Question 5: SerpAPI Key
+```
+Do you have a SerpAPI key for Google Scholar searches?
+- Yes (enter key)
+- No (skip Scholar, use arXiv only)
+- Get one now (show link to serpapi.com)
+```
+
+Store as `serpapi_key` (empty string if skipped)
+
+## Step 3: Interactive Keyword Setup
+
+1. Explain: "Let's set up research topics you want to track. You can have multiple topics, each with several keyword searches."
+
+2. Ask: "What's your first research topic?" (e.g., "AI & Productivity")
+
+3. For each topic, guide through creating keywords:
+   ```
+   Great! Now let's add search keywords for "[topic name]".
+
+   Tips for keywords:
+   - Use AND to require multiple terms: "LLM AND workplace"
+   - Use quotes for exact phrases: "knowledge work"
+   - Combine terms with OR (happens automatically across keywords)
+
+   Enter keywords one at a time (or 'done' when finished):
+   ```
+
+4. Collect keywords for topic (keep asking until user says "done")
+
+5. Ask: "Add another research topic? (yes/no)"
+
+6. Repeat for all topics
+
+7. Build keywords.md content from collected topics and keywords
+
+## Step 4: Setup Filter Criteria
+
+1. Explain: "Now let's configure filters to remove irrelevant papers from large digests (especially useful for Sunday digests)."
+
+2. Ask questions:
+
+### Filter Question 1: Business Focus
+```
+What's your primary business focus or work domain?
+Example: "product management and continuous discovery"
+```
+
+Store as `business_focus`
+
+### Filter Question 2: Relevant Topics
+```
+What broad topics are relevant to your work? (comma-separated)
+Examples: user research, decision making, team collaboration
+```
+
+Parse into array, store as `relevant_topics`
+
+### Filter Question 3: Irrelevant Topics
+```
+What topics should definitely be filtered out? (comma-separated)
+Examples: pure mathematics, medical procedures, agriculture
+```
+
+Parse into array, store as `irrelevant_topics`
+
+### Filter Question 4: Relevance Criteria
+```
+In one sentence, what makes a paper relevant to you?
+Example: "Paper must relate to how product teams make decisions or discover customer needs"
+```
+
+Store as `relevance_criteria`
+
+## Step 5: Create Configuration Files
+
+### Create ~/.claude/research-system-config/config.yaml
+
+```yaml
+# Research Automation Configuration
+# Generated by setup wizard on [timestamp]
+
+serpapi:
+  api_key: "[serpapi_key]"
+
+arxiv:
+  max_results: 10
+  days_back: 1
+
+google_scholar:
+  max_results: 10
+  search_days: 7
+
+paths:
+  research_root: "[research_root]"
+  daily_digests: "daily-digests"
+  data: ".research-data"
+
+links:
+  format: "[link_format]"
+
+filter:
+  business_focus: "[business_focus]"
+  relevant_topics: [relevant_topics array]
+  irrelevant_topics: [irrelevant_topics array]
+  relevance_criteria: "[relevance_criteria]"
+
+integration:
+  create_task_files: false
+  task_output_dir: null
+  queue_file_path: null
+```
+
+1. Create directory: `mkdir -p ~/.claude/research-system-config`
+2. Write to `~/.claude/research-system-config/config.yaml`
+
+### Create {research_root}/.research-data/keywords.md
+
+```markdown
+# Research Keywords
+
+[For each topic:]
+## [Topic Name]
+[For each keyword in topic:]
+- [keyword]
+
+```
+
+Write to `{research_root}/.research-data/keywords.md`
+
+## Step 6: Create Directory Structure
+
+In research_root, create:
+```
+research_root/
+├── daily-digests/
+├── .research-data/
+└── [Topic folders from keywords]/
+    ├── Sources/
+    └── Notes/
+```
+
+For each topic in keywords, create topic folder with Sources/ and Notes/ subdirectories.
+
+## Step 7: Setup Cron Jobs
+
+1. Generate cron entries:
+
+```bash
+# Research paper discovery - [fetch_time]
+[fetch_time cron] * * * cd [plugin_dir]/scripts/automation && python3 fetch_papers.py >> [research_root]/.research-data/fetch_papers.log 2>&1
+
+# PDF monitoring - [monitor_time]
+[monitor_time cron] * * * cd [plugin_dir]/scripts/automation && python3 monitor_sources.py >> [research_root]/.research-data/monitor_sources.log 2>&1
+```
+
+2. Ask user for confirmation:
+```
+I'll add these cron jobs to your crontab. The jobs will:
+- Fetch new papers daily at [fetch_time]
+- Monitor for new PDFs at [monitor_time]
+
+Proceed? (yes/no)
+```
+
+3. If yes:
+   - Get current crontab: `crontab -l > /tmp/current_cron 2>/dev/null || true`
+   - Append new entries
+   - Install: `crontab /tmp/current_cron`
+   - Clean up temp file
+
+4. Show what was added
+
+## Step 8: Validate Setup
+
+Run validation checks:
+
+1. **Test paper fetching:**
+   ```bash
+   cd [plugin_dir]/scripts/automation && python3 fetch_papers.py --test
+   ```
+   - Check if it runs without errors
+   - Verify config is readable
+
+2. **Test API keys:**
+   - If SerpAPI key provided, verify it's valid format
+   - Show warning if it looks invalid
+
+3. **Check directory permissions:**
+   - Verify can write to research_root
+   - Verify can write to .research-data
+
+4. **Run test search** (optional):
+   - Fetch 1-2 papers from first keyword
+   - Show sample result
+   - Confirm it's working
+
+## Step 9: Success Summary
+
+Show complete setup summary:
+
+```
+✓ Setup Complete!
+
+Configuration:
+- Research directory: [research_root]
+- Link format: [link_format]
+- Topics configured: [count]
+- Filter criteria: Set
+
+Cron Jobs:
+- Paper fetching: Daily at [fetch_time]
+- PDF monitoring: Daily at [monitor_time]
+
+Next Steps:
+1. Customize keywords: edit [research_root]/.research-data/keywords.md
+2. Wait for first paper fetch (tomorrow at [fetch_time])
+   OR run manually: cd [plugin_dir]/scripts/automation && python3 fetch_papers.py
+3. Download PDFs of interest to topic Sources/ folders
+4. Run /generate-research-digest to create summaries
+5. Run /filter-research-digest on Sunday digests to remove irrelevant papers
+
+Files Created:
+- ~/.claude/research-system-config/config.yaml
+- [research_root]/.research-data/keywords.md
+- [research_root]/.research-data/ (tracking directory)
+- [count] topic folders in [research_root]
+
+Logs will be saved to:
+- [research_root]/.research-data/fetch_papers.log
+- [research_root]/.research-data/monitor_sources.log
+```
+
+## Error Handling
+
+- **Plugin directory not found**: Show error, explain installation needed
+- **Python dependencies missing**: Show pip install command
+- **Research directory can't be created**: Show permission error
+- **Crontab access denied**: Show manual cron setup instructions
+- **Invalid API key format**: Warn but continue (user can fix later)
+- **Cron job already exists**: Detect duplicates, offer to replace or skip
+
+## Notes
+
+- Setup creates config.yaml and keywords.md from scratch (overwrites if exist)
+- Cron jobs are appended to existing crontab (doesn't remove other jobs)
+- All paths are absolute for cron job reliability
+- Test commands help verify setup before first real run
+- User can re-run setup to reconfigure (will ask about overwriting)
