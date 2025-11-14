@@ -11,11 +11,10 @@ Guide you through complete setup of the research automation system.
 ## Step 1: Welcome and Detect Installation
 
 1. Welcome user: "Welcome to Research System setup! I'll help you configure automated paper discovery and summarization."
-2. Find plugin installation directory (look for .claude-plugin/plugin.json)
-3. Store as `plugin_dir`
-4. Check Python dependencies:
+2. Set plugin directory: `plugin_dir = ~/.claude/plugins/cache/research-system`
+3. Check Python dependencies:
    - Run `pip3 list | grep -E "(arxiv|google-search-results|PyYAML|pypdf)"`
-   - If any missing, show installation command: `pip3 install -r {plugin_dir}/requirements.txt`
+   - If any missing, show installation command: `pip3 install -r $plugin_dir/requirements.txt`
 
 ## Step 2: Gather Basic Configuration
 
@@ -212,10 +211,10 @@ For each topic in keywords, create topic folder with Sources/ and Notes/ subdire
 
 ```bash
 # Research paper discovery - [fetch_time]
-[fetch_time cron] * * * cd [plugin_dir]/scripts/automation && python3 fetch_papers.py >> [research_root]/.research-data/fetch_papers.log 2>&1
+[fetch_time cron] * * * cd ~/.claude/plugins/cache/research-system/scripts/automation && python3 fetch_papers.py >> [research_root]/.research-data/fetch_papers.log 2>&1
 
 # PDF monitoring - [monitor_time]
-[monitor_time cron] * * * cd [plugin_dir]/scripts/automation && python3 monitor_sources.py >> [research_root]/.research-data/monitor_sources.log 2>&1
+[monitor_time cron] * * * cd ~/.claude/plugins/cache/research-system/scripts/automation && python3 monitor_sources.py >> [research_root]/.research-data/monitor_sources.log 2>&1
 ```
 
 2. Ask user for confirmation:
@@ -241,7 +240,7 @@ Run validation checks:
 
 1. **Test paper fetching:**
    ```bash
-   cd [plugin_dir]/scripts/automation && python3 fetch_papers.py --test
+   cd ~/.claude/plugins/cache/research-system/scripts/automation && python3 fetch_papers.py --test
    ```
    - Check if it runs without errors
    - Verify config is readable
@@ -279,7 +278,7 @@ Cron Jobs:
 Next Steps:
 1. Customize keywords: edit [research_root]/.research-data/keywords.md
 2. Wait for first paper fetch (tomorrow at [fetch_time])
-   OR run manually: cd [plugin_dir]/scripts/automation && python3 fetch_papers.py
+   OR run manually: cd ~/.claude/plugins/cache/research-system/scripts/automation && python3 fetch_papers.py
 3. Download PDFs of interest to topic Sources/ folders
 4. Run /generate-research-digest to create summaries
 5. Run /filter-research-digest on Sunday digests to remove irrelevant papers

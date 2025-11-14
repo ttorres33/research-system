@@ -33,9 +33,8 @@ This command takes a PDF path and generates a summary in the appropriate Notes/ 
 
 ### 3. Check PDF Size and Conditionally Split
 
-1. **Find plugin directory:**
-   - Search for `.claude-plugin/plugin.json` in parent directories
-   - Store as `plugin_dir`
+1. **Set plugin directory:**
+   - `plugin_dir = ~/.claude/plugins/cache/research-system`
 
 2. **Get file size:**
    - Run: `stat -f%z "$pdf_path"`
@@ -44,8 +43,8 @@ This command takes a PDF path and generates a summary in the appropriate Notes/ 
 3. **Decide processing strategy:**
    - If size ≥ 5242880 bytes (5 MB):
      - Generate unique timestamp: `date +%s`
-     - Create temp directory: `/tmp/research-sections-{timestamp}`
-     - Run: `python3 {plugin_dir}/scripts/utilities/split_pdf_by_sections.py "$pdf_path" "/tmp/research-sections-{timestamp}"`
+     - Create temp directory: `/tmp/research-sections-$timestamp`
+     - Run: `python3 $plugin_dir/scripts/utilities/split_pdf_by_sections.py "$pdf_path" "/tmp/research-sections-$timestamp"`
      - This splits PDF into section files (000_Introduction.pdf, 001_Methods.pdf, etc.)
      - Set `input_type = "section_dir"` and `input_path = "/tmp/research-sections-{timestamp}"`
      - Inform user: "Large PDF detected ({size} MB). Splitting into sections for processing..."
