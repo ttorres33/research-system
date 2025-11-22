@@ -31,7 +31,7 @@ This command takes a PDF path and generates a summary in the appropriate Notes/ 
    - If no, exit with message showing existing summary path
    - If yes, continue (will overwrite)
 
-### 3. Check PDF Size and Conditionally Split
+### 3. Check PDF Size and Split Large PDFs
 
 1. **Set plugin directory:**
    - `plugin_dir = ~/.claude/plugins/cache/research-system`
@@ -40,39 +40,93 @@ This command takes a PDF path and generates a summary in the appropriate Notes/ 
    - Run: `stat -f%z "$pdf_path"`
    - Store size in bytes
 
-3. **Decide processing strategy:**
+3. **Split if needed:**
    - If size ≥ 5242880 bytes (5 MB):
      - Generate unique timestamp: `date +%s`
      - Create temp directory: `/tmp/research-sections-$timestamp`
      - Run: `python3 $plugin_dir/scripts/utilities/split_pdf_by_sections.py "$pdf_path" "/tmp/research-sections-$timestamp"`
      - This splits PDF into section files (000_Introduction.pdf, 001_Methods.pdf, etc.)
-     - Set `input_type = "section_dir"` and `input_path = "/tmp/research-sections-{timestamp}"`
+     - Set `sections_dir = "/tmp/research-sections-{timestamp}"`
      - Inform user: "Large PDF detected ({size} MB). Splitting into sections for processing..."
    - Else (small PDF < 5 MB):
-     - Set `input_type = "pdf"` and `input_path = pdf_path`
+     - Set `sections_dir = null` (not needed)
      - Inform user: "Processing PDF..."
 
-### 4. Generate Summary
+### 4. Extract Paper Metadata
 
-1. **Spawn research-summarizer agent:**
+**For large PDFs (sections_dir is set):**
+1. List section files in the temp directory, sorted numerically
+2. Read the first section PDF (000_*.pdf) to extract:
+   - Paper title (usually in header/title block on first page)
+   - Publication date (if available)
+3. Store metadata for use in final summary
+
+**For small PDFs (sections_dir is null):**
+1. Read first 2 pages of PDF to extract:
+   - Paper title
+   - Publication date (if available)
+2. Store metadata for use in final summary
+
+### 5. Generate Summary
+
+**For large PDFs (sections_dir is set):**
+1. List all section PDF files in `sections_dir`, sorted numerically
+2. Create temp summaries directory: `/tmp/research-summaries-{timestamp}`
+3. For each section PDF, spawn a research-summarizer agent IN PARALLEL:
    - Use Task tool with subagent_type="research-system:research-summarizer"
-   - Pass the appropriate input:
-     - If `input_type` is "section_dir": Include section directory path in prompt
-     - If `input_type` is "pdf": Include PDF path in prompt
-   - Include output path (Notes/ folder location)
+   - Pass section PDF path: `{sections_dir}/00X_SectionName.pdf`
+   - Pass output path: `/tmp/research-summaries-{timestamp}/00X_SectionName.md`
+4. Wait for all agents to complete
+5. Aggregate section summaries:
+   - Extract tags from all section summary files (read only frontmatter):
+     ```bash
+     grep "^tags:" /tmp/research-summaries-{timestamp}/*.md
+     ```
+   - Combine and deduplicate tags, keep top 5-10 most relevant
+   - Create final summary at Notes/ folder location:
+     ```markdown
+     ---
+     tags: [aggregated, deduplicated, tags]
+     ---
 
-2. **Wait for completion:**
-   - Agent will read PDF or section files
-   - Generate structured summary with bullets
-   - Write to Notes/ folder
+     # Paper Title (from metadata)
 
-### 5. Cleanup Temporary Files
+     Publication Date: [if found in metadata]
 
-1. If section directory was created:
+     ```
+   - Append all section summaries (strip their frontmatter):
+     ```bash
+     for file in /tmp/research-summaries-{timestamp}/*.md; do
+       sed '1,/^---$/d; 1,/^---$/d' "$file" >> "$output_path"
+     done
+     ```
+6. Cleanup temp summaries: `rm -rf "/tmp/research-summaries-{timestamp}"`
+
+**For small PDFs (sections_dir is null):**
+1. Create temp file: `/tmp/research-summary-{timestamp}.md`
+2. Spawn single research-summarizer agent:
+   - Use Task tool with subagent_type="research-system:research-summarizer"
+   - Pass PDF path
+   - Pass temp output path: `/tmp/research-summary-{timestamp}.md`
+3. Wait for agent to complete
+4. Extract tags from agent's summary (read only frontmatter)
+5. Create final summary at Notes/ folder location:
+   - Write frontmatter with tags from agent
+   - Add paper title as `# Title` (from metadata)
+   - Add publication date (from metadata)
+   - Append agent's summary content (strip frontmatter):
+     ```bash
+     sed '1,/^---$/d; 1,/^---$/d' /tmp/research-summary-{timestamp}.md >> "$output_path"
+     ```
+6. Cleanup temp file: `rm "/tmp/research-summary-{timestamp}.md"`
+
+### 6. Cleanup Temporary Files
+
+1. If section directory was created (large PDF):
    - Run: `rm -rf "/tmp/research-sections-{timestamp}"`
    - Inform user: "Cleaned up temporary section files"
 
-### 6. Report Results
+### 7. Report Results
 
 Inform user:
 - "✓ Summary generated successfully"

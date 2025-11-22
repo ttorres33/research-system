@@ -51,17 +51,12 @@ For each item in the queue:
    - Example: `Research/AI & Productivity/Sources/paper.pdf` → `Research/AI & Productivity/Notes/paper.md`
    - If summary exists, skip (already processed)
 
-3. **Extract paper metadata:**
-   - Read first 2 pages of PDF to extract:
-     - Paper title (usually in header/title block)
-     - Publication date (if available)
-   - Store for use in final summary
-
-4. **Check PDF size and conditionally process:**
+3. **Check PDF size and conditionally split:**
    - Get file size in bytes: `stat -f%z "$pdf_path"`
    - Calculate output path: change `Sources/file.pdf` to `Notes/file.md`
 
    **If size ≥ 5242880 bytes (5 MB) - Large PDF:**
+   - Set `is_large_pdf = true`
    - Generate unique timestamp: `date +%s`
    - Create temp directories:
      - Section PDFs: `/tmp/research-sections-{timestamp}`
@@ -69,6 +64,11 @@ For each item in the queue:
    - Run: `python3 $plugin_dir/scripts/utilities/split_pdf_by_sections.py "$pdf_path" "/tmp/research-sections-$timestamp"`
      - This splits PDF into section files (000_Introduction.pdf, 001_Methods.pdf, etc.)
    - List section PDF files in numerical order
+   - **Extract metadata from first section:**
+     - Read the first section PDF (000_*.pdf) to extract:
+       - Paper title (usually in header/title block)
+       - Publication date (if available)
+     - Store for use in final summary
    - For each section PDF, spawn a research-summarizer agent IN PARALLEL:
      - Use Task tool with subagent_type="research-system:research-summarizer"
      - Pass PDF path: `/tmp/research-sections-{timestamp}/00X_SectionName.pdf`
@@ -101,6 +101,13 @@ For each item in the queue:
    - Cleanup: `rm -rf "/tmp/research-sections-{timestamp}" "/tmp/research-summaries-{timestamp}"`
 
    **If size < 5242880 bytes (5 MB) - Small PDF:**
+   - Set `is_large_pdf = false`
+   - Generate unique timestamp: `date +%s`
+   - **Extract metadata:**
+     - Read first 2 pages of PDF to extract:
+       - Paper title (usually in header/title block)
+       - Publication date (if available)
+     - Store for use in final summary
    - Create temp file for summary: `/tmp/research-summary-{timestamp}.md`
    - Spawn single research-summarizer agent:
      - Use Task tool with subagent_type="research-system:research-summarizer"
