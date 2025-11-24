@@ -101,9 +101,9 @@ def search_arxiv(keywords, config, max_results=10, days_back=1):
     for i, keyword in enumerate(keywords, 1):
         print(f"  [arXiv {i}/{len(keywords)}] Searching: {keyword[:80]}...", flush=True)
 
-        # Respect arXiv rate limit: 3 seconds between requests
+        # Respect arXiv rate limit: 10 seconds between requests to avoid 429 errors
         if i > 1:
-            time.sleep(3)
+            time.sleep(10)
 
         # Retry logic for 503 errors
         max_retries = 3

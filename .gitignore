@@ -50,3 +50,6 @@ Thumbs.db
 
 # Test data
 test_research/
+
+# Development notes
+process-notes.md

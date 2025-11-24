@@ -64,32 +64,23 @@ For each item in the queue:
    - Run: `python3 $plugin_dir/scripts/utilities/split_pdf_by_sections.py "$pdf_path" "/tmp/research-sections-$timestamp"`
      - This splits PDF into section files (000_Introduction.pdf, 001_Methods.pdf, etc.)
    - List section PDF files in numerical order
-   - **Extract metadata from first section:**
-     - Read the first section PDF (000_*.pdf) to extract:
-       - Paper title (usually in header/title block)
-       - Publication date (if available)
-     - Store for use in final summary
    - For each section PDF, spawn a research-summarizer agent IN PARALLEL:
      - Use Task tool with subagent_type="research-system:research-summarizer"
      - Pass PDF path: `/tmp/research-sections-{timestamp}/00X_SectionName.pdf`
      - Pass output path: `/tmp/research-summaries-{timestamp}/00X_SectionName.md`
    - Wait for all agents to complete
    - Aggregate section summaries:
-     - Extract tags from all section summary files (read only frontmatter):
-       ```bash
-       grep "^tags:" /tmp/research-summaries-{timestamp}/*.md
-       ```
-     - Combine and deduplicate tags, keep top 5-10 most relevant
-     - Create final frontmatter header using metadata from step 3:
+     - Read all section summary files to extract from frontmatter:
+       - All tags (combine and deduplicate, keep top 5-10 most relevant)
+       - Title from first section's frontmatter
+       - Date from first section's frontmatter (if found)
+     - Create final frontmatter header:
        ```markdown
        ---
        tags: [aggregated, deduplicated, tags]
+       title: "Title from first section"
+       date: "Date from first section (if found)"
        ---
-
-       # Paper Title
-
-       Publication Date: [if found]
-
        ```
      - Write frontmatter to output path in Notes/ folder
      - Use bash to append all section summaries (strip their frontmatter):
@@ -102,28 +93,12 @@ For each item in the queue:
 
    **If size < 5242880 bytes (5 MB) - Small PDF:**
    - Set `is_large_pdf = false`
-   - Generate unique timestamp: `date +%s`
-   - **Extract metadata:**
-     - Read first 2 pages of PDF to extract:
-       - Paper title (usually in header/title block)
-       - Publication date (if available)
-     - Store for use in final summary
-   - Create temp file for summary: `/tmp/research-summary-{timestamp}.md`
    - Spawn single research-summarizer agent:
      - Use Task tool with subagent_type="research-system:research-summarizer"
      - Pass PDF path: `$pdf_path`
-     - Pass output path: `/tmp/research-summary-{timestamp}.md`
+     - Pass output path directly to Notes/ folder (no temp file needed)
    - Wait for agent to complete
-   - Extract tags from agent's summary file (read only frontmatter)
-   - Create final summary at output path:
-     - Write frontmatter with tags from agent
-     - Add paper title as `# Title` using metadata from step 3
-     - Add publication date using metadata from step 3
-     - Append agent's summary content (strip the frontmatter from temp file):
-       ```bash
-       sed '1,/^---$/d; 1,/^---$/d' /tmp/research-summary-{timestamp}.md >> "$output_path"
-       ```
-   - Cleanup: `rm "/tmp/research-summary-{timestamp}.md"`
+   - Agent will create the summary file with frontmatter (tags, title, date) and content all in one file
 
 5. **Track processed items:**
    - Keep list of newly generated summaries (PDF path → summary path)
