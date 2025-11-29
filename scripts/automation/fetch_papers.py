@@ -14,6 +14,16 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from serpapi import GoogleSearch
 
+
+class RateLimitAbort(Exception):
+    """Raised when arXiv rate limiting persists after all retries exhausted."""
+    def __init__(self, topic, keyword, query_num, total_queries):
+        self.topic = topic
+        self.keyword = keyword
+        self.query_num = query_num
+        self.total_queries = total_queries
+        super().__init__(f"Rate limit abort at query {query_num}/{total_queries}: {keyword}")
+
 def load_config():
     """Load configuration from config.yaml"""
     # Config stored outside plugin directory to survive updates
@@ -88,8 +98,24 @@ def save_seen_arxiv_papers(config, seen_urls):
             'last_updated': datetime.now().isoformat()
         }, f, indent=2)
 
-def search_arxiv(keywords, config, max_results=10, days_back=1):
-    """Search arXiv for papers matching keywords"""
+def search_arxiv(keywords, config, max_results=10, days_back=1, topic_name=None, global_query_offset=0, total_global_queries=0):
+    """Search arXiv for papers matching keywords.
+
+    Args:
+        keywords: List of search keywords
+        config: Configuration dict
+        max_results: Max results per keyword
+        days_back: Only include papers from last N days
+        topic_name: Name of current topic (for error reporting)
+        global_query_offset: Number of queries already completed in this run
+        total_global_queries: Total queries planned for entire run
+
+    Returns:
+        List of paper dicts
+
+    Raises:
+        RateLimitAbort: If 429 errors persist after all retries exhausted
+    """
     # Search each keyword separately and combine results
     # This prevents overly broad OR queries
     all_papers = []
@@ -98,18 +124,25 @@ def search_arxiv(keywords, config, max_results=10, days_back=1):
     # Load previously seen papers to avoid duplicates across runs
     previously_seen = load_seen_arxiv_papers(config)
 
+    # 429 retry delays: 1 minute, 5 minutes, 10 minutes
+    RATE_LIMIT_DELAYS = [60, 300, 600]
+
     for i, keyword in enumerate(keywords, 1):
+        global_query_num = global_query_offset + i
         print(f"  [arXiv {i}/{len(keywords)}] Searching: {keyword[:80]}...", flush=True)
 
         # Respect arXiv rate limit: 10 seconds between requests to avoid 429 errors
         if i > 1:
             time.sleep(10)
 
-        # Retry logic for 503 errors
-        max_retries = 3
-        retry_delay = 5  # Start with 5 seconds
+        # Track if we succeeded for this keyword
+        query_succeeded = False
 
-        for attempt in range(max_retries):
+        # Retry logic for 503 errors (quick retries)
+        max_503_retries = 3
+        retry_delay_503 = 5  # Start with 5 seconds
+
+        for attempt_503 in range(max_503_retries):
             try:
                 # Use the keyword as-is (assumes each line is a complete search)
                 search = arxiv.Search(
@@ -138,15 +171,76 @@ def search_arxiv(keywords, config, max_results=10, days_back=1):
                         seen_urls.add(result.entry_id)
 
                 # If successful, break out of retry loop
+                query_succeeded = True
                 break
 
             except Exception as e:
-                if '503' in str(e) and attempt < max_retries - 1:
-                    print(f"    503 error, retrying in {retry_delay}s (attempt {attempt + 1}/{max_retries})...", flush=True)
-                    time.sleep(retry_delay)
-                    retry_delay *= 2  # Exponential backoff
+                error_str = str(e)
+
+                # Handle 429 rate limit errors with longer backoff
+                if '429' in error_str:
+                    # Try the 429 retry sequence: 1min, 5min, 10min
+                    for retry_num, delay in enumerate(RATE_LIMIT_DELAYS):
+                        delay_mins = delay // 60
+                        print(f"    429 rate limit, waiting {delay_mins} minute(s) (attempt {retry_num + 1}/{len(RATE_LIMIT_DELAYS)})...", flush=True)
+                        time.sleep(delay)
+
+                        try:
+                            search = arxiv.Search(
+                                query=keyword,
+                                max_results=max_results,
+                                sort_by=arxiv.SortCriterion.SubmittedDate
+                            )
+
+                            for result in search.results():
+                                if result.entry_id in seen_urls or result.entry_id in previously_seen:
+                                    continue
+                                days_old = (datetime.now() - result.published.replace(tzinfo=None)).days
+                                if days_old <= days_back:
+                                    all_papers.append({
+                                        'title': result.title,
+                                        'authors': ', '.join([author.name for author in result.authors]),
+                                        'year': result.published.year,
+                                        'abstract': result.summary.replace('\n', ' '),
+                                        'url': result.entry_id,
+                                        'pdf_url': result.pdf_url,
+                                        'source': 'arXiv'
+                                    })
+                                    seen_urls.add(result.entry_id)
+
+                            # Success after retry
+                            print(f"    Retry successful after {delay_mins} minute wait", flush=True)
+                            query_succeeded = True
+                            break
+
+                        except Exception as retry_e:
+                            if '429' not in str(retry_e):
+                                # Different error, re-raise
+                                raise retry_e
+                            # Still 429, continue to next delay
+                            continue
+
+                    if query_succeeded:
+                        break  # Break out of 503 retry loop too
+
+                    # All 429 retries exhausted - save what we have and abort
+                    all_seen = previously_seen.union(seen_urls)
+                    save_seen_arxiv_papers(config, all_seen)
+
+                    raise RateLimitAbort(
+                        topic=topic_name or "Unknown",
+                        keyword=keyword,
+                        query_num=global_query_num,
+                        total_queries=total_global_queries
+                    )
+
+                # Handle 503 errors with quick retries
+                elif '503' in error_str and attempt_503 < max_503_retries - 1:
+                    print(f"    503 error, retrying in {retry_delay_503}s (attempt {attempt_503 + 1}/{max_503_retries})...", flush=True)
+                    time.sleep(retry_delay_503)
+                    retry_delay_503 *= 2  # Exponential backoff
                 else:
-                    # If not 503 or final attempt, raise the error
+                    # Unknown error or final 503 attempt, raise
                     raise
 
     # Save all seen URLs (merge with previously seen)
@@ -251,11 +345,21 @@ def search_google_scholar(keywords, config, api_key, max_results=5, days_back=7)
 
     return all_papers
 
-def generate_digest(topics_papers, output_path):
-    """Generate markdown digest from papers grouped by topic"""
+def generate_digest(topics_papers, output_path, rate_limit_note=None):
+    """Generate markdown digest from papers grouped by topic.
+
+    Args:
+        topics_papers: Dict mapping topic names to lists of paper dicts
+        output_path: Path to write the digest file
+        rate_limit_note: Optional note about rate limiting to include at top of digest
+    """
     today = datetime.now().strftime('%Y-%m-%d')
 
     content = [f"# Research Digest - {today}\n"]
+
+    # Add rate limit warning if present
+    if rate_limit_note:
+        content.append(f"\n> **Note:** {rate_limit_note}\n")
 
     for topic, papers in topics_papers.items():
         if not papers:
@@ -304,11 +408,16 @@ def main():
 
     print(f"Found {len(topics)} topics with keywords", flush=True)
 
+    # Calculate total queries for progress tracking
+    total_arxiv_queries = sum(len(keywords) for keywords in topics.values())
+
     # Determine which sources to search
     is_weekly = datetime.now().weekday() == 6  # Sunday = weekly Google Scholar search
 
     # Fetch papers for each topic
     topics_papers = {}
+    rate_limit_note = None
+    global_query_offset = 0
 
     for topic_num, (topic, keywords) in enumerate(topics.items(), 1):
         print(f"\n[{topic_num}/{len(topics)}] Searching for '{topic}' ({len(keywords)} keywords)...", flush=True)
@@ -317,11 +426,32 @@ def main():
         # Always search arXiv (daily)
         try:
             arxiv_days = config['arxiv'].get('days_back', 1)  # Default to 1 day
-            arxiv_papers = search_arxiv(keywords, config, config['arxiv']['max_results'], arxiv_days)
+            arxiv_papers = search_arxiv(
+                keywords,
+                config,
+                config['arxiv']['max_results'],
+                arxiv_days,
+                topic_name=topic,
+                global_query_offset=global_query_offset,
+                total_global_queries=total_arxiv_queries
+            )
             papers.extend(arxiv_papers)
             print(f"  Found {len(arxiv_papers)} papers from arXiv", flush=True)
+            global_query_offset += len(keywords)
+
+        except RateLimitAbort as e:
+            print(f"  ✗ arXiv rate limit exceeded after retries. Aborting remaining queries.", flush=True)
+            rate_limit_note = (
+                f"arXiv rate limiting encountered at topic \"{e.topic}\" "
+                f"(query {e.query_num} of {e.total_queries}). "
+                f"Papers from remaining topics may be incomplete."
+            )
+            topics_papers[topic] = papers
+            break  # Exit the topic loop entirely
+
         except Exception as e:
             print(f"  Error searching arXiv: {e}", flush=True)
+            global_query_offset += len(keywords)
 
         # Search Google Scholar (weekly only)
         if is_weekly:
@@ -344,9 +474,13 @@ def main():
     today = datetime.now().strftime('%Y-%m-%d')
     digest_path = Path(config['paths']['research_root']) / config['paths']['daily_digests'] / f"{today}.md"
 
-    total_papers = generate_digest(topics_papers, digest_path)
+    total_papers = generate_digest(topics_papers, digest_path, rate_limit_note=rate_limit_note)
 
-    print(f"\n✓ Generated digest with {total_papers} papers: {digest_path}", flush=True)
+    if rate_limit_note:
+        print(f"\n⚠ Generated partial digest with {total_papers} papers: {digest_path}", flush=True)
+        print(f"  {rate_limit_note}", flush=True)
+    else:
+        print(f"\n✓ Generated digest with {total_papers} papers: {digest_path}", flush=True)
 
 if __name__ == "__main__":
     main()
