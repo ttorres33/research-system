@@ -345,13 +345,14 @@ def search_google_scholar(keywords, config, api_key, max_results=5, days_back=7)
 
     return all_papers
 
-def generate_digest(topics_papers, output_path, rate_limit_note=None):
+def generate_digest(topics_papers, output_path, rate_limit_note=None, total_keywords=0):
     """Generate markdown digest from papers grouped by topic.
 
     Args:
         topics_papers: Dict mapping topic names to lists of paper dicts
         output_path: Path to write the digest file
         rate_limit_note: Optional note about rate limiting to include at top of digest
+        total_keywords: Total number of keywords searched across all topics
     """
     today = datetime.now().strftime('%Y-%m-%d')
 
@@ -360,6 +361,16 @@ def generate_digest(topics_papers, output_path, rate_limit_note=None):
     # Add rate limit warning if present
     if rate_limit_note:
         content.append(f"\n> **Note:** {rate_limit_note}\n")
+
+    # Check if all searches returned 0 results
+    total_papers = sum(len(papers) for papers in topics_papers.values())
+    if total_papers == 0:
+        content.append("\n**No papers found today.**\n")
+        content.append("\nAll searches returned 0 results. This can happen when:\n")
+        content.append("- No new papers were published matching your keywords\n")
+        content.append("- arXiv had no new submissions in your research areas\n")
+        content.append("- The `days_back` setting is filtering out older papers\n")
+        content.append(f"\nSearched {total_keywords} keywords across {len(topics_papers)} topics.\n")
 
     for topic, papers in topics_papers.items():
         if not papers:
@@ -474,7 +485,7 @@ def main():
     today = datetime.now().strftime('%Y-%m-%d')
     digest_path = Path(config['paths']['research_root']) / config['paths']['daily_digests'] / f"{today}.md"
 
-    total_papers = generate_digest(topics_papers, digest_path, rate_limit_note=rate_limit_note)
+    total_papers = generate_digest(topics_papers, digest_path, rate_limit_note=rate_limit_note, total_keywords=total_arxiv_queries)
 
     if rate_limit_note:
         print(f"\n⚠ Generated partial digest with {total_papers} papers: {digest_path}", flush=True)
