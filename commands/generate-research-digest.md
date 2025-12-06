@@ -107,7 +107,10 @@ For each item in the queue:
 ## Step 5: Find Today's Daily Digest
 
 1. Construct digest path using `today_date`: `digest_dir + "/" + today_date + ".md"`
-2. Check if today's digest exists
+2. **Check if today's digest exists using bash test command:**
+   ```bash
+   test -f "$digest_dir/$today_date.md" && echo "EXISTS" || echo "NOT FOUND"
+   ```
 3. Store status for final report: `digest_exists = true/false`
 4. **Continue to next step even if digest doesn't exist - will be noted in final report**
 
