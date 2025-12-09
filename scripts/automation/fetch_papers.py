@@ -9,10 +9,40 @@ import sys
 import yaml
 import json
 import time
+import logging
+import warnings
 import arxiv
 from datetime import datetime, timedelta
 from pathlib import Path
 from serpapi import GoogleSearch
+
+
+def setup_logging(config):
+    """Configure logging to capture both stdout and stderr (including warnings)."""
+    research_root = Path(config['paths']['research_root']).expanduser().resolve()
+    data_dir = research_root / config['paths']['data']
+    log_file = data_dir / "fetch_papers.log"
+
+    # Configure root logger to capture everything
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format='%(asctime)s [%(levelname)s] %(message)s',
+        handlers=[
+            logging.FileHandler(log_file, mode='a'),
+            logging.StreamHandler(sys.stdout)
+        ]
+    )
+
+    # Redirect warnings to the logging system
+    logging.captureWarnings(True)
+
+    # Also capture any warnings that bypass the logging system
+    def warning_handler(message, category, filename, lineno, file=None, line=None):
+        logging.warning(f"{category.__name__}: {message} ({filename}:{lineno})")
+
+    warnings.showwarning = warning_handler
+
+    return logging.getLogger(__name__)
 
 
 class RateLimitAbort(Exception):
@@ -127,6 +157,10 @@ def search_arxiv(keywords, config, max_results=10, days_back=1, topic_name=None,
     # 429 retry delays: 1 minute, 5 minutes, 10 minutes
     RATE_LIMIT_DELAYS = [60, 300, 600]
 
+    # Create a single client instance to reuse across all queries
+    # This is the recommended approach per arxiv.py documentation
+    client = arxiv.Client()
+
     for i, keyword in enumerate(keywords, 1):
         global_query_num = global_query_offset + i
         print(f"  [arXiv {i}/{len(keywords)}] Searching: {keyword[:80]}...", flush=True)
@@ -151,7 +185,7 @@ def search_arxiv(keywords, config, max_results=10, days_back=1, topic_name=None,
                     sort_by=arxiv.SortCriterion.SubmittedDate
                 )
 
-                for result in search.results():
+                for result in client.results(search):
                     # Skip duplicates (both from this run and previous runs)
                     if result.entry_id in seen_urls or result.entry_id in previously_seen:
                         continue
@@ -192,7 +226,7 @@ def search_arxiv(keywords, config, max_results=10, days_back=1, topic_name=None,
                                 sort_by=arxiv.SortCriterion.SubmittedDate
                             )
 
-                            for result in search.results():
+                            for result in client.results(search):
                                 if result.entry_id in seen_urls or result.entry_id in previously_seen:
                                     continue
                                 days_old = (datetime.now() - result.published.replace(tzinfo=None)).days
@@ -412,6 +446,10 @@ def generate_digest(topics_papers, output_path, rate_limit_note=None, total_keyw
 def main():
     # Load configuration
     config = load_config()
+
+    # Setup logging to capture warnings and errors
+    logger = setup_logging(config)
+    logger.info("Starting fetch_papers.py")
 
     # Load keywords by topic
     research_root = config['paths']['research_root']
