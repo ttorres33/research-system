@@ -11,10 +11,9 @@ Guide you through complete setup of the research automation system.
 ## Step 1: Welcome and Detect Installation
 
 1. Welcome user: "Welcome to Research System setup! I'll help you configure automated paper discovery and summarization."
-2. Set plugin directory: `plugin_dir = ~/.claude/plugins/cache/research-system`
-3. Check Python dependencies:
+2. Check Python dependencies:
    - Run `pip3 list | grep -E "(arxiv|google-search-results|PyYAML|pypdf)"`
-   - If any missing, show installation command: `pip3 install -r $plugin_dir/requirements.txt`
+   - If any missing, show installation command: `pip3 install -r ${CLAUDE_PLUGIN_ROOT}/requirements.txt`
 
 ## Step 2: Gather Basic Configuration
 
@@ -207,32 +206,41 @@ For each topic in keywords, create topic folder with Sources/ and Notes/ subdire
 
 ## Step 7: Setup Cron Jobs
 
-1. Generate cron entries:
+1. **Create stable symlink for cron jobs:**
+   - Symlink location: `~/.claude/research-system-config/plugin` (stable path for cron)
+   - Target: `${CLAUDE_PLUGIN_ROOT}` (actual plugin location)
+   - Run: `ln -sfn "${CLAUDE_PLUGIN_ROOT}" ~/.claude/research-system-config/plugin`
+   - This symlink allows cron jobs to survive plugin directory changes
+
+2. Generate cron entries using the symlink path:
 
 ```bash
 # Research paper discovery - [fetch_time]
-[fetch_time cron] * * * cd ~/.claude/plugins/cache/research-system/scripts/automation && python3 fetch_papers.py >> [research_root]/.research-data/fetch_papers.log 2>&1
+[fetch_time cron] * * * cd ~/.claude/research-system-config/plugin/scripts/automation && python3 fetch_papers.py >> [research_root]/.research-data/fetch_papers.log 2>&1
 
 # PDF monitoring - [monitor_time]
-[monitor_time cron] * * * cd ~/.claude/plugins/cache/research-system/scripts/automation && python3 monitor_sources.py >> [research_root]/.research-data/monitor_sources.log 2>&1
+[monitor_time cron] * * * cd ~/.claude/research-system-config/plugin/scripts/automation && python3 monitor_sources.py >> [research_root]/.research-data/monitor_sources.log 2>&1
 ```
 
-2. Ask user for confirmation:
+3. Ask user for confirmation:
 ```
 I'll add these cron jobs to your crontab. The jobs will:
 - Fetch new papers daily at [fetch_time]
 - Monitor for new PDFs at [monitor_time]
 
+Note: Cron jobs use a stable symlink path. If the plugin moves after a Claude Code
+update, run /fix-scheduled-scripts to repair the symlink.
+
 Proceed? (yes/no)
 ```
 
-3. If yes:
+4. If yes:
    - Get current crontab: `crontab -l > /tmp/current_cron 2>/dev/null || true`
    - Append new entries
    - Install: `crontab /tmp/current_cron`
    - Clean up temp file
 
-4. Show what was added
+5. Show what was added
 
 ## Step 8: Validate Setup
 
@@ -240,7 +248,7 @@ Run validation checks:
 
 1. **Test paper fetching:**
    ```bash
-   cd ~/.claude/plugins/cache/research-system/scripts/automation && python3 fetch_papers.py --test
+   cd ${CLAUDE_PLUGIN_ROOT}/scripts/automation && python3 fetch_papers.py --test
    ```
    - Check if it runs without errors
    - Verify config is readable
@@ -278,13 +286,17 @@ Cron Jobs:
 Next Steps:
 1. Customize keywords: edit [research_root]/.research-data/keywords.md
 2. Wait for first paper fetch (tomorrow at [fetch_time])
-   OR run manually: cd ~/.claude/plugins/cache/research-system/scripts/automation && python3 fetch_papers.py
+   OR run manually: cd ${CLAUDE_PLUGIN_ROOT}/scripts/automation && python3 fetch_papers.py
 3. Download PDFs of interest to topic Sources/ folders
 4. Run /generate-research-digest to create summaries
 5. Run /filter-research-digest on Sunday digests to remove irrelevant papers
 
+If cron jobs break after Claude Code updates:
+- Run /fix-scheduled-scripts to repair the symlink
+
 Files Created:
 - ~/.claude/research-system-config/config.yaml
+- ~/.claude/research-system-config/plugin (symlink to plugin directory)
 - [research_root]/.research-data/keywords.md
 - [research_root]/.research-data/ (tracking directory)
 - [count] topic folders in [research_root]
@@ -302,11 +314,13 @@ Logs will be saved to:
 - **Crontab access denied**: Show manual cron setup instructions
 - **Invalid API key format**: Warn but continue (user can fix later)
 - **Cron job already exists**: Detect duplicates, offer to replace or skip
+- **Symlink creation fails**: Show error, suggest checking permissions
 
 ## Notes
 
 - Setup creates config.yaml and keywords.md from scratch (overwrites if exist)
 - Cron jobs are appended to existing crontab (doesn't remove other jobs)
-- All paths are absolute for cron job reliability
+- Cron jobs use a stable symlink path that survives plugin directory changes
+- If plugin moves, run /fix-scheduled-scripts to update the symlink
 - Test commands help verify setup before first real run
 - User can re-run setup to reconfigure (will ask about overwriting)

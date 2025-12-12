@@ -24,19 +24,17 @@ Filter a research digest to show only papers relevant to your business focus.
 
 ## Step 2: Identify Digest to Filter
 
-1. Set plugin directory: `plugin_dir = ~/.claude/plugins/cache/research-system`
-
-2. Ask user which digest to filter using AskUserQuestion:
+1. Ask user which digest to filter using AskUserQuestion:
    - Option 1: "Today's digest"
    - Option 2: "Most recent Sunday digest" (largest, weekly Google Scholar)
    - Option 3: "Specify date (YYYY-MM-DD)"
 
-3. Based on answer:
+2. Based on answer:
    - If "Today's digest":
-     - Run `python3 $plugin_dir/scripts/utilities/calculate_dates.py`
+     - Run `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/utilities/calculate_dates.py`
      - Extract today's date from output
    - If "Sunday digest":
-     - Run `python3 $plugin_dir/scripts/utilities/calculate_dates.py`
+     - Run `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/utilities/calculate_dates.py`
      - Extract "Last Sunday" date from output
    - If "Specify date": Use provided date
 

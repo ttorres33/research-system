@@ -24,10 +24,9 @@ Generate summaries for new research papers and create a daily digest file.
 
 ## Step 2: Get Today's Date
 
-1. Set plugin directory: `plugin_dir = ~/.claude/plugins/cache/research-system`
-2. Run: `python3 $plugin_dir/scripts/utilities/calculate_dates.py`
-3. Parse output to extract today's date in YYYY-MM-DD format
-4. Store as `today_date`
+1. Run: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/utilities/calculate_dates.py`
+2. Parse output to extract today's date in YYYY-MM-DD format
+3. Store as `today_date`
 
 ## Step 3: Read Research Queue
 
@@ -61,7 +60,7 @@ For each item in the queue:
    - Create temp directories:
      - Section PDFs: `/tmp/research-sections-{timestamp}`
      - Section summaries: `/tmp/research-summaries-{timestamp}`
-   - Run: `python3 $plugin_dir/scripts/utilities/split_pdf_by_sections.py "$pdf_path" "/tmp/research-sections-$timestamp"`
+   - Run: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/utilities/split_pdf_by_sections.py "$pdf_path" "/tmp/research-sections-$timestamp"`
      - This splits PDF into section files (000_Introduction.pdf, 001_Methods.pdf, etc.)
    - List section PDF files in numerical order
    - For each section PDF, spawn a research-summarizer agent IN PARALLEL:

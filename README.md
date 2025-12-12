@@ -109,6 +109,7 @@ This command:
 - `/filter-research-digest` - Filter digest by relevance
 - `/update-research-filters` - Interactively refine filter criteria
 - `/setup-research-automation` - Configuration wizard
+- `/fix-scheduled-scripts` - Repair cron jobs after plugin directory changes
 
 ## Working with Large PDFs and Conference Proceedings
 
@@ -209,11 +210,16 @@ See `config/README.md` for detailed configuration guide.
 
 ## Troubleshooting
 
+### Cron jobs stopped working
+After Claude Code updates, the plugin directory may move, breaking cron jobs:
+- Run `/fix-scheduled-scripts` to repair the symlink and update crontab
+- This updates the stable symlink at `~/.claude/research-system-config/plugin`
+
 ### No papers in digest
 - Check cron jobs: `crontab -l | grep research`
 - Check logs: `tail -f .research-data/fetch_papers.log`
 - Verify SerpAPI key in config.yaml
-- Run manually to see errors: `cd scripts/automation && python3 fetch_papers.py`
+- Run `/fix-scheduled-scripts` if cron paths are broken
 
 ### Summaries not generating
 - Check queue exists: `cat .research-data/.research-queue.json`

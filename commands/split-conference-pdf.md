@@ -27,11 +27,8 @@ This command is useful when you download conference proceedings and want to extr
 
 ### 2. Run Split Script
 
-1. **Set plugin directory:**
-   - `plugin_dir = ~/.claude/plugins/cache/research-system`
-
-2. **Run the split script:**
-   - Run: `python3 $plugin_dir/scripts/utilities/split_conference_pdf.py "$pdf_path" "$output_dir"`
+1. **Run the split script:**
+   - Run: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/utilities/split_conference_pdf.py "$pdf_path" "$output_dir"`
    - The script will:
      - Extract TOC from PDF metadata/bookmarks
      - Identify individual papers based on TOC structure
