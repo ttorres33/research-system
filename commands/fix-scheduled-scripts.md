@@ -16,8 +16,10 @@ Repair scheduled scripts (cron jobs) when the plugin directory location changes.
    - Symlink location: `~/.claude/research-system-config/plugin` (stable, never changes)
    - Target: `${CLAUDE_PLUGIN_ROOT}` (actual plugin location, may change)
 
-2. **Ensure config directory exists:**
-   - Run: `mkdir -p ~/.claude/research-system-config`
+2. **Check config directory:**
+   - Run: `test -d ~/.claude/research-system-config && echo "EXISTS" || echo "NOT_FOUND"`
+   - If NOT_FOUND: Run `mkdir -p ~/.claude/research-system-config`
+   - If EXISTS: Continue (directory already exists)
 
 3. **Check if symlink exists:**
    - Run: `ls -la ~/.claude/research-system-config/plugin 2>/dev/null || echo "NOT_FOUND"`
