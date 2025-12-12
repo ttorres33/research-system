@@ -110,6 +110,9 @@ This command:
 - `/update-research-filters` - Interactively refine filter criteria
 - `/setup-research-automation` - Configuration wizard
 - `/fix-scheduled-scripts` - Repair cron jobs after plugin directory changes
+- `/fetch-papers` - Manually run paper fetching (instead of waiting for cron)
+- `/monitor-sources` - Scan for new PDFs and add to summarization queue
+- `/check-logs` - View recent log entries to diagnose issues
 
 ## Working with Large PDFs and Conference Proceedings
 
