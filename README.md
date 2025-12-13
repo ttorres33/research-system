@@ -103,6 +103,7 @@ This command:
 
 ## Commands
 
+- `/about` - Show this README for help and usage information
 - `/generate-research-digest` - Generate summaries and create today's digest
 - `/research-summary` - Generate summary for a single PDF (handles large PDFs automatically)
 - `/split-conference-pdf` - Split conference proceedings into individual papers
