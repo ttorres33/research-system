@@ -66,9 +66,8 @@ The wizard will guide you through:
 ### 3. Wait for Papers or Run Manually
 
 Papers are fetched automatically by cron job, or run manually:
-```bash
-cd scripts/automation
-python3 fetch_papers.py
+```
+/fetch-papers
 ```
 
 ### 4. Process New Papers
@@ -87,8 +86,8 @@ This command:
 *Note: The timing below is just one example. During setup, you choose when each automated task runs to fit your schedule.*
 
 ### Automated Tasks
-- **Paper Discovery** (`fetch_papers.py`): Searches arXiv (daily) and Google Scholar (Sundays), creates digest in `daily-digests/YYYY-MM-DD.md`
-- **PDF Monitoring** (`monitor_sources.py`): Scans for new PDFs, creates queue for summary generation
+- **Paper Discovery**: Searches arXiv (daily) and Google Scholar (Sundays), creates digest in `daily-digests/YYYY-MM-DD.md`
+- **PDF Monitoring**: Scans for new PDFs you've saved, queues them for summarization
 
 ### Your Workflow
 1. Run `/generate-research-digest` to:
@@ -179,17 +178,14 @@ research-directory/
 
 ## Configuration
 
-Edit `config/config.yaml` to customize:
+Run `/setup-research-automation` to configure the system interactively. This wizard handles:
 - API keys (SerpAPI for Google Scholar)
-- Search settings (max results, days back)
-- Paths (research directory location)
-- Link format (Obsidian vs standard markdown)
+- Research directory location
+- Research topics and keywords
 - Filter criteria (business focus, relevant/irrelevant topics)
-- Task system integration (optional)
+- Cron job scheduling
 
-Edit `config/keywords.md` to define research topics and search keywords.
-
-See `config/README.md` for detailed configuration guide.
+Configuration files are stored in `~/.claude/research-system-config/`.
 
 ## Requirements
 
@@ -210,7 +206,7 @@ See `config/README.md` for detailed configuration guide.
 - **Start with 3-5 topics** with 3-5 keywords each
 - **Monitor Sunday digests** - they're largest and show if you need more filtering
 - **Refine filter criteria iteratively** using `/update-research-filters`
-- **Check logs** if papers stop appearing: `.research-data/*.log`
+- **Check logs** if papers stop appearing: run `/check-logs`
 
 ## Troubleshooting
 
@@ -220,15 +216,14 @@ After Claude Code updates, the plugin directory may move, breaking cron jobs:
 - This updates the stable symlink at `~/.claude/research-system-config/plugin`
 
 ### No papers in digest
-- Check cron jobs: `crontab -l | grep research`
-- Check logs: `tail -f .research-data/fetch_papers.log`
-- Verify SerpAPI key in config.yaml
+- Run `/check-logs` to see if there are errors
+- Run `/fetch-papers` to manually trigger paper fetching
 - Run `/fix-scheduled-scripts` if cron paths are broken
 
 ### Summaries not generating
-- Check queue exists: `cat .research-data/.research-queue.json`
-- Verify PDFs exist in Sources/ folders
-- Check Claude Code is running
+- Run `/monitor-sources` to scan for new PDFs and add them to the queue
+- Run `/generate-research-digest` to process queued PDFs
+- Verify PDFs exist in your topic's `Sources/` folders
 
 ### Too many irrelevant papers
 - Run `/filter-research-digest` on large digests
