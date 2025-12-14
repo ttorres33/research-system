@@ -12,7 +12,7 @@
 
 ### Required Settings
 
-- **serpapi.api_key**: Get from https://serpapi.com/ (free tier: 100 searches/month)
+- **serpapi.api_key**: Get from https://serpapi.com/ (free tier: 250 searches/month)
   - Required for Google Scholar searches
   - Leave empty to use arXiv only
 
