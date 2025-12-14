@@ -1,6 +1,7 @@
 ---
 description: Show plugin documentation and usage
 allowed-tools: [Read, AskUserQuestion]
+model: haiku
 ---
 
 # About Research System

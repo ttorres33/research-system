@@ -2,6 +2,7 @@
 name: split-conference-pdf
 description: Split a conference proceedings PDF into individual papers based on table of contents
 allowed-tools: [Read, Bash]
+model: haiku
 ---
 
 # Split Conference PDF Command

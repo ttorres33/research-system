@@ -2,6 +2,7 @@
 name: monitor-sources
 description: Manually scan Sources folders for new PDFs and add them to the summarization queue
 allowed-tools: [Read, Bash]
+model: haiku
 ---
 
 # Monitor Sources Command

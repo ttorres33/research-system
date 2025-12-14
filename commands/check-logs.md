@@ -2,6 +2,7 @@
 name: check-logs
 description: Check recent log entries from fetch_papers and monitor_sources scripts to diagnose issues
 allowed-tools: [Read, Bash]
+model: haiku
 ---
 
 # Check Logs Command

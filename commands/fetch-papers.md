@@ -2,6 +2,7 @@
 name: fetch-papers
 description: Manually run the paper fetching script to retrieve new papers from arXiv and Google Scholar
 allowed-tools: [Read, Bash]
+model: haiku
 ---
 
 # Fetch Papers Command
