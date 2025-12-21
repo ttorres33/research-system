@@ -53,33 +53,51 @@ Filter a research digest to show only papers relevant to your business focus.
 
 For efficient processing of large digests:
 
-1. **Split digest into sections** by topic headings (`## Topic Name`)
-2. **Spawn parallel agents** (one per topic section) using Task tool
-3. Each agent filters papers in its section based on:
-   - business_focus from config
-   - relevant_topics from config
-   - irrelevant_topics from config
-   - relevance_criteria from config
+### 4a. Split digest into temp files
 
-**Agent instructions for each section:**
+1. **Parse digest** and split by `## ` headers (topic sections)
+2. **Write each section** to a temp file:
+   - Create temp directory: `/tmp/research-filter-{timestamp}/`
+   - For each section, write to `/tmp/research-filter-{timestamp}/section-{n}-{topic-slug}.md`
+   - Include the `## Topic Name` header in each file
+3. **Track sections**: Keep a list of `{section_name, temp_file_path}` for reassembly
+
+### 4b. Spawn parallel agents
+
+1. **Spawn one agent per section** using Task tool
+2. Each agent receives:
+   - Path to the section temp file (NOT the content)
+   - Filter criteria from config
+   - Output file path for filtered results
+
+**Agent instructions:**
 ```
-Review the following research papers and filter out papers that are NOT relevant to:
-- Business focus: [business_focus]
-- Relevant topics: [relevant_topics]
-- Irrelevant topics to exclude: [irrelevant_topics]
-- Relevance criteria: [relevance_criteria]
+Filter research papers for relevance.
 
-For each paper, assess:
-1. Does the title/snippet relate to the business focus?
-2. Is it in an irrelevant topic category?
-3. Does it meet the relevance criteria?
+1. Read the section file: [temp_file_path]
+2. Filter papers based on:
+   - Business focus: [business_focus]
+   - Relevant topics: [relevant_topics]
+   - Irrelevant topics to exclude: [irrelevant_topics]
+   - Relevance criteria: [relevance_criteria]
 
-Return only papers that ARE relevant. Remove all others.
-Maintain the original markdown format for kept papers.
+For each paper (### heading), assess:
+- Does the title/snippet relate to the business focus?
+- Is it in an irrelevant topic category?
+- Does it meet the relevance criteria?
+
+3. Write ONLY the relevant papers to: [output_file_path]
+   - Keep the ## section header
+   - Maintain original markdown format for kept papers
+   - If no papers are relevant, write just the ## header
 ```
 
-4. **Collect results** from all parallel agents
-5. **Combine filtered sections** back into complete digest structure
+### 4c. Collect and reassemble
+
+1. **Wait for all agents** to complete
+2. **Read filtered results** from each output temp file
+3. **Combine sections** in original order back into complete digest
+4. **Clean up temp files**: Remove the `/tmp/research-filter-{timestamp}/` directory
 
 ## Step 5: Create Filtered Digest
 
