@@ -38,7 +38,7 @@ The Research System automates your research workflow in a simple daily cycle:
 
 In Claude Code, run:
 ```
-/plugin marketplace add ttorres33/cc-plugins
+/plugin marketplace add ttorres33/teresa-torres-plugins
 /plugin install research-system
 ```
 
