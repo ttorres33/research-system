@@ -22,6 +22,13 @@ Generate summaries for new research papers and create a daily digest file.
    - `data_dir = research_root + "/" + data`
    - `queue_file = data_dir + "/.research-queue.json"`
 
+4. **Check for vault override (task-management integration):**
+   - Read `~/.claude/task-management-config/config.yaml` if it exists
+   - If `research.vault_dir` is set and `paths.tasks_root` is set:
+     - Set `research_today_dir = tasks_root + "/" + research.vault_dir`
+     - This overrides where `research-today.md` and its archive are written
+   - Otherwise: `research_today_dir = research_root` (default, original behavior)
+
 ## Step 2: Get Today's Date
 
 1. Run: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/utilities/calculate_dates.py`
@@ -117,20 +124,20 @@ For each item in the queue:
 
 Before creating the new file:
 
-1. Check if `research_root + "/research-today.md"` exists
+1. Check if `research_today_dir + "/research-today.md"` exists
 2. If it exists:
    - Read the file
    - Extract date from the first line: `# Research Digest - YYYY-MM-DD`
    - Use regex or string parsing to get the date
-   - Create archive directory if needed: `research_root + "/research-today-archive"`
-   - Copy the file to: `research_root + "/research-today-archive/" + [extracted_date] + ".md"`
+   - Create archive directory if needed: `research_today_dir + "/research-today-archive"`
+   - Copy the file to: `research_today_dir + "/research-today-archive/" + [extracted_date] + ".md"`
    - Example: `research-today-archive/2025-11-03.md`
 3. If file doesn't exist or date extraction fails, skip archiving (first run)
 
 ## Step 7: Create research-today.md
 
 1. **Always create this file** - even if there are no new summaries
-2. Create file at `research_root + "/research-today.md"`
+2. Create file at `research_today_dir + "/research-today.md"`
 3. **IMPORTANT: Use link format from config:**
    - If `links.format` is "obsidian": Use `[[filename]]` format
    - If `links.format` is "markdown": Use `[text](relative/path/to/file.md)` format
@@ -272,7 +279,7 @@ Daily Digest Status:
 - Filtered digest also available
 
 Output Files:
-- research-today.md created at: /Users/user/Research/research-today.md
+- research-today.md created at: [research_today_dir]/research-today.md
 - Previous digest archived to: research-today-archive/2025-11-10.md
 
 All papers processed successfully.
@@ -292,7 +299,7 @@ Daily Digest Status:
 - Today's digest available at: /Users/user/Research/daily-digests/2025-11-11.md
 
 Output Files:
-- research-today.md updated at: /Users/user/Research/research-today.md
+- research-today.md updated at: [research_today_dir]/research-today.md
 
 No new papers to process. System is up to date.
 ```
@@ -311,7 +318,7 @@ Daily Digest Status:
 - No digest for today
 
 Output Files:
-- research-today.md updated at: /Users/user/Research/research-today.md
+- research-today.md updated at: [research_today_dir]/research-today.md
 
 Next Steps:
 - Run monitor_sources.py cron job to populate the queue
