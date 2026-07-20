@@ -52,4 +52,6 @@ Thumbs.db
 test_research/
 
 # Development notes
-process-notes.md
+/process-notes.md
+/process-notes.md.archive
+/process-notes/
