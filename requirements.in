@@ -1,0 +1,10 @@
+# Direct dependencies only — no version specifiers.
+# Regenerate the lockfile with:
+#   uv pip compile requirements.in -o requirements.txt --generate-hashes --universal --python-version 3.10
+# (--universal + --python-version keep environment markers so the lockfile
+#  installs on any supported Python >= 3.10, not just the one it was compiled on.
+#  Add -U only for a deliberate upgrade of all pins — needs Teresa's approval.)
+arxiv    # arXiv API client (pulls in lxml + requests)
+serpapi  # Official SerpApi client for Google Scholar (replaced sdist-only google-search-results, 2026-07-19)
+PyYAML   # Config file parsing
+pypdf    # PDF processing for summaries

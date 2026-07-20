@@ -12,7 +12,7 @@ Guide you through complete setup of the research automation system.
 
 1. Welcome user: "Welcome to Research System setup! I'll help you configure automated paper discovery and summarization."
 2. Check Python dependencies:
-   - Run `pip3 list | grep -E "(arxiv|google-search-results|PyYAML|pypdf)"`
+   - Run `pip3 list | grep -E "(arxiv|serpapi|PyYAML|pypdf)"`
    - If any missing, show installation command: `pip3 install -r ${CLAUDE_PLUGIN_ROOT}/requirements.txt`
 
 ## Step 2: Gather Basic Configuration

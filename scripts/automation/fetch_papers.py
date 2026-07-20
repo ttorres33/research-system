@@ -14,7 +14,7 @@ import warnings
 import arxiv
 from datetime import datetime, timedelta
 from pathlib import Path
-from serpapi import GoogleSearch
+import serpapi
 
 
 def setup_logging(config):
@@ -324,6 +324,8 @@ def search_google_scholar(keywords, config, api_key, max_results=5, days_back=7)
     end_date = datetime.now()
     start_date = end_date - timedelta(days=days_back)
 
+    client = serpapi.Client(api_key=api_key)
+
     for i, keyword in enumerate(keywords, 1):
         print(f"  [Scholar {i}/{len(keywords)}] Searching: {keyword[:80]}...", flush=True)
 
@@ -335,14 +337,12 @@ def search_google_scholar(keywords, config, api_key, max_results=5, days_back=7)
         params = {
             "engine": "google_scholar",
             "q": keyword,  # Each line is searched individually
-            "api_key": api_key,
             "num": max_results,
             "as_ylo": start_date.year,  # Year low
             "scisbd": 1  # Sort by date (most recent first)
         }
 
-        search = GoogleSearch(params)
-        results = search.get_dict()
+        results = client.search(params)
 
         if 'organic_results' in results:
             for result in results['organic_results']:

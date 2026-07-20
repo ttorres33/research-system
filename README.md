@@ -189,7 +189,7 @@ Configuration files are stored in `~/.claude/research-system-config/`.
 
 ## Requirements
 
-- Python 3.8+
+- Python 3.10+
 - Claude Code (for summarization)
 - SerpAPI key (optional, for Google Scholar - free tier: 250 searches/month)
 
