@@ -5,13 +5,7 @@ Split a conference proceedings PDF into individual papers based on TOC.
 
 import sys
 from pathlib import Path
-try:
-    from pypdf import PdfReader, PdfWriter
-except ImportError:
-    print("pypdf not installed. Installing...")
-    import subprocess
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "pypdf"])
-    from pypdf import PdfReader, PdfWriter
+from pypdf import PdfReader, PdfWriter
 
 def extract_toc_from_pdf(pdf_path):
     """Extract table of contents with page numbers from PDF metadata"""
