@@ -116,11 +116,12 @@ For each item in the queue:
 
 ## Step 5b: Claude Review of arXiv Candidates
 
-The scheduled run records, for every topic in `claude` or `both` mode, the new arXiv papers
-in that topic's categories that Claude should read. The digest shows them as one line per
-topic: `_N papers await Claude review. Run /generate-research-digest._` This step does the
-review and writes the keepers into the digest. Run it before Step 6 so the archived and
-linked digest is complete.
+The scheduled run records, once, every new arXiv paper that falls in the categories of at
+least one topic in `claude` or `both` mode, together with the topics each paper is eligible
+for and every Claude topic's brief. The digest shows one line per Claude topic:
+`_N papers await Claude review. Run /generate-research-digest._` This step has Claude read
+each paper once, keep it under every eligible topic whose brief it fits, and writes the
+keepers into the digest. Run it before Step 6 so the archived and linked digest is complete.
 
 1. **Find today's candidates:** `candidates_file = candidates_dir + "/" + today_date + ".json"`
    - If it does not exist: set `review_status = "no candidates"` and skip to Step 6
@@ -138,24 +139,30 @@ linked digest is complete.
    ```bash
    python3 ${CLAUDE_PLUGIN_ROOT}/scripts/utilities/apply_claude_triage.py prepare "[candidates_file]" "/tmp/research-triage-[today_date]"
    ```
-   This writes one markdown file per topic batch (at most 40 papers each) with the topic's
-   brief, its exclusions and the papers (id, category, title, abstract), plus
-   `manifest.json` in that directory listing each batch file and the path its result must be
-   written to. Read the manifest to get the batch file paths for the next step.
+   This writes batch files of at most 40 papers each. Every batch carries all the Claude
+   topics' briefs (with the topic's keywords as examples), the exclusions, and per paper
+   its id, category, eligible topics, title and abstract, plus `manifest.json` in that
+   directory listing each batch file and the path its result must be written to. Read the
+   manifest to get the batch file paths for the next step. If the manifest is empty, every
+   candidate has aged out of the harvest files; go straight to step 5.
 
 4. **Spawn one agent per batch file, in parallel,** using the Task tool. Each agent receives
    the batch file path (not its content) and these instructions:
    ```
-   Review arXiv papers for one research topic.
+   Review arXiv papers against the user's research topics.
 
    1. Read the batch file: [batch_path]. Its header states where to write your result and
-      the exact JSON format; the "Brief" section says what the user is looking for and the
-      "Exclude" section what to leave out.
-   2. For each paper under "Papers", decide from the title and abstract whether it fits the
-      brief and is not excluded. Be selective: the user reads every paper you keep.
-   3. Write the result file named in the header as JSON: {"kept": [{"id": "...", "why": "..."}]}
-      with one entry per kept paper and a "why" of at most 25 words. If nothing fits, write
-      {"kept": []}. Only ids from the batch file are allowed.
+      the exact JSON format. The "Topics" section gives each topic's brief, with the
+      keywords the user searches with as examples; "Exclude" lists what to leave out of
+      every topic.
+   2. For each paper under "Papers", read the title and abstract and decide, for each of
+      the topics listed as eligible for that paper and only those, whether it fits that
+      topic's brief. A paper may fit more than one topic, or none. Be selective: the user
+      reads every paper you keep.
+   3. Write the result file named in the header as JSON:
+      {"kept": [{"id": "...", "topic": "...", "why": "..."}]} with one entry per paper and
+      topic kept, the topic name exactly as written, and a "why" of at most 25 words. If
+      nothing fits, write {"kept": []}. Only ids and topic names from the batch file are allowed.
    ```
 
 5. **Wait for all agents**, then apply the results:
@@ -163,14 +170,14 @@ linked digest is complete.
    python3 ${CLAUDE_PLUGIN_ROOT}/scripts/utilities/apply_claude_triage.py apply "[candidates_file]" "/tmp/research-triage-[today_date]"
    ```
    Python rewrites the digest: each topic's pending line becomes
-   `_Claude reviewed N candidates, kept K._` followed by the kept papers in the digest's
-   normal format with a `**Why:**` line, and the candidates file gets `processed_at`.
+   `_Claude reviewed N candidates, kept K._` (N is the papers eligible for that topic)
+   followed by the kept papers in the digest's normal format with a `**Why:**` line. A paper
+   kept for two topics appears under both. The candidates file gets `processed_at`.
    The command prints one line per topic (`"Topic": reviewed N, kept K`); keep them for the report.
-   - Exit code 2 means a topic could not be applied: a batch result was missing or unreadable,
-     or the digest no longer had that topic's pending line. The candidates file is left
-     unprocessed. For a missing result, re-run that agent and `apply` again. For a missing
-     pending line (the digest was rebuilt by a manual fetch), run `fetch_papers.py --force`
-     and start this step over. Do not hand-edit the digest.
+   - Exit code 2 with "nothing applied" means a batch result was missing or unreadable;
+     re-run that agent and `apply` again. Exit code 2 naming topics means the digest no
+     longer had those topics' pending lines (it was rebuilt by a manual fetch); run
+     `fetch_papers.py --force` and start this step over. Do not hand-edit the digest.
 
 6. **Clean up:** `rm -rf "/tmp/research-triage-[today_date]"`. Set `review_status = "done"` with the per-topic counts.
 
@@ -414,4 +421,4 @@ Next Steps:
 - Queue is only cleared after successful processing of all items
 - **Always respect the link format setting** - this ensures compatibility with user's markdown viewer
 - **Order on Sundays: run this command before `/filter-research-digest`.** The filter reads the digest file, so a filtered digest made before the Claude review will not contain the kept papers
-- The Claude review reads only title and abstract; the brief comes from each topic's `looking for` setting in `keywords.md` (or the config's filter criteria when a topic has none)
+- The Claude review reads each candidate paper once, title and abstract only, against every Claude topic it is eligible for by category; the brief comes from each topic's `looking for` setting in `keywords.md` (or the config's filter criteria when a topic has none). Cost is the number of candidate papers, however many Claude topics there are

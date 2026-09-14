@@ -97,16 +97,18 @@ class FetchPapersTests(unittest.TestCase):
             self.assertEqual(fp.main([]), 0)
         text = self.digest()
         self.assertIn("\n## Care\n\n### \"The Only Thing Certain", text, "keyword match in cs.HC")
-        self.assertIn("\n## Agents\n\n_1 paper awaits Claude review.", text,
-                      "the agents paper is a candidate; the care paper was taken by the earlier topic")
-        self.assertNotIn("## Both", text, "both-mode topic got nothing: its only match was taken by Care")
+        self.assertIn("\n## Agents\n\n_1 paper awaits Claude review.", text)
+        self.assertIn("\n## Both\n\n_1 paper awaits Claude review.", text,
+                      "the care paper was claimed by Care's keyword; the agents paper is eligible for Both too")
         self.assertNotIn("## Everything", text, "the 2013 paper is not new, so no match")
         self.assertNotIn("A Replaced Paper", text)
         candidates = self.candidates()
-        self.assertEqual([t["name"] for t in candidates["topics"]], ["Agents"])
-        self.assertEqual(candidates["topics"][0]["paper_ids"], ["2609.13136"])
+        self.assertEqual([t["name"] for t in candidates["topics"]], ["Agents", "Both"])
         self.assertEqual(candidates["topics"][0]["looking_for"], "human-agent interaction")
-        self.assertEqual(candidates["topics"][0]["exclude"], ["medicine"])
+        self.assertEqual(candidates["topics"][1]["keywords"], ['"aging in place"'])
+        self.assertEqual(candidates["exclude"], ["medicine"])
+        self.assertEqual(candidates["papers"], [{"id": "2609.13136", "topics": ["Agents", "Both"]}],
+                         "one entry per paper, listing every Claude topic it is eligible for")
         self.assertEqual(self.seen(), {"http://arxiv.org/abs/2609.12070v1", "http://arxiv.org/abs/2609.13136v1"})
         state = json.loads((self.root / ".research-data" / ".arxiv_harvest_state.json").read_text())
         self.assertEqual(state["last_datestamp"], "2026-09-14")
@@ -149,8 +151,7 @@ class FetchPapersTests(unittest.TestCase):
             code = fp.main([])
         self.assertEqual(code, 1)
         self.assertEqual(self.digest(), before, "digest untouched")
-        self.assertFalse(hasattr(self, "harvest_from") and self.harvest_from is None)
-        self.assertEqual(self.candidates()["topics"][0]["paper_ids"], ["2609.13136"], "candidates untouched")
+        self.assertEqual(self.candidates()["papers"][0]["id"], "2609.13136", "candidates untouched")
 
     def test_forced_rerun_carries_unprocessed_candidates(self):
         with self.running(records=PAGE1 + PAGE2):
@@ -160,8 +161,9 @@ class FetchPapersTests(unittest.TestCase):
         self.assertEqual(code, 0)
         text = self.digest()
         self.assertIn("\n## Agents\n\n_1 paper awaits Claude review.", text, "pending line re-emitted from the carried ids")
+        self.assertIn("\n## Both\n\n_1 paper awaits Claude review.", text)
         self.assertNotIn("No papers today", text)
-        self.assertEqual(self.candidates()["topics"][0]["paper_ids"], ["2609.13136"])
+        self.assertEqual(self.candidates()["papers"], [{"id": "2609.13136", "topics": ["Agents", "Both"]}])
 
     def test_processed_candidates_are_not_carried(self):
         with self.running(records=PAGE1 + PAGE2):
@@ -172,6 +174,18 @@ class FetchPapersTests(unittest.TestCase):
         with self.running(records=PAGE1 + PAGE2):
             fp.main(["--force"])
         self.assertNotIn("await Claude review", self.digest())
+
+    def test_claude_topics_sharing_a_category_all_see_the_paper(self):
+        self.write_keywords("## A\nmode: claude\ncategories: cs.HC\n\n## B\nmode: claude\ncategories: cs.CY, cs.AI\n\n## C\nmode: claude\ncategories: econ.GN\n")
+        with self.running(records=PAGE1 + PAGE2):
+            fp.main([])
+        papers = {p["id"]: p["topics"] for p in self.candidates()["papers"]}
+        self.assertEqual(papers, {"2609.12070": ["A", "B"], "2609.13136": ["A", "B"]},
+                         "no topic claims a candidate; C has no eligible paper")
+        text = self.digest()
+        self.assertIn("\n## A\n\n_2 papers await Claude review.", text)
+        self.assertIn("\n## B\n\n_2 papers await Claude review.", text)
+        self.assertNotIn("## C", text)
 
     def test_prune_candidates_removes_only_old_dated_files(self):
         cdir = self.root / ".research-data" / "claude-candidates"

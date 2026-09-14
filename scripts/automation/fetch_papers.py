@@ -179,25 +179,6 @@ def scrub_secrets(message):
     return re.sub(r'api_key=[^&\s]+', 'api_key=***', message)
 
 
-def load_unprocessed_candidates(config, today):
-    """{topic name: [paper ids]} from today's candidates file when the Claude review has not run.
-
-    A second run on the same day must not lose them: the harvest store already knows
-    the papers, so they would not come back as new, and they are already marked seen.
-    """
-    path = config_data_dir(config) / CANDIDATES_DIR / f"{today}.json"
-    if not path.exists():
-        return {}
-    try:
-        data = json.loads(path.read_text())
-    except ValueError as e:
-        logging.getLogger(__name__).warning("Candidates file %s unreadable (%s); ignored", path, e)
-        return {}
-    if data.get("processed_at"):
-        return {}
-    return {topic.get("name"): list(topic.get("paper_ids", [])) for topic in data.get("topics", [])}
-
-
 def compile_keywords(topic):
     """Parse a topic's keywords. Returns (queries, problems); problems are strings
     naming the topic and the keyword, for the log and the digest note."""
@@ -210,13 +191,25 @@ def compile_keywords(topic):
     return queries, problems
 
 
-def match_topic(topic, new_papers, queries, seen_urls):
-    """Split the topic's pool of new papers into keyword matches and Claude candidates."""
-    pool = [p for p in new_papers if p.in_categories(topic.categories) and p.url not in seen_urls]
+def keyword_matches(topic, new_papers, queries, excluded_urls):
+    """(pool, matched): the topic's new papers by category, and those a keyword matches."""
+    pool = [p for p in new_papers if p.in_categories(topic.categories) and p.url not in excluded_urls]
     matched = [p for p in pool if topic.uses_keywords and any(q.matches(p) for q in queries)]
-    matched_ids = {p.id for p in matched}
-    candidates = [p for p in pool if topic.uses_claude and p.id not in matched_ids]
-    return pool, matched, candidates
+    return pool, matched
+
+
+def claude_pool(new_papers, claude_topics, excluded_urls):
+    """[(paper, [eligible topic names])]: every unclaimed new paper that falls in the
+    categories of at least one Claude-mode topic, once. Claude reads each paper once and
+    may keep it under any topic it is eligible for."""
+    candidates = []
+    for paper in new_papers:
+        if paper.url in excluded_urls:
+            continue
+        eligible = [t.name for t in claude_topics if paper.in_categories(t.categories)]
+        if eligible:
+            candidates.append((paper, eligible))
+    return candidates
 
 
 def looking_for_text(topic, config):
@@ -232,12 +225,33 @@ def looking_for_text(topic, config):
     return " ".join(parts)
 
 
-def write_candidates(config, today, store, topic_candidates, digest_path):
-    """Record the Claude-mode candidates for /generate-research-digest.
+def load_unprocessed_candidates(config, today):
+    """{paper id: [topic names]} from today's candidates file when the Claude review has not run.
 
-    topic_candidates is a list of (Topic, [paper id, ...]). Returns the path written, or None.
+    A second run on the same day must not lose them: the harvest store already knows
+    the papers, so they would not come back as new, and they are already marked seen.
     """
-    if not any(ids for _, ids in topic_candidates):
+    path = config_data_dir(config) / CANDIDATES_DIR / f"{today}.json"
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text())
+    except ValueError as e:
+        logging.getLogger(__name__).warning("Candidates file %s unreadable (%s); ignored", path, e)
+        return {}
+    if data.get("processed_at"):
+        return {}
+    return {item.get("id"): list(item.get("topics", [])) for item in data.get("papers", []) if item.get("id")}
+
+
+def write_candidates(config, today, store, claude_topics, candidates, digest_path):
+    """Record the Claude review's input for /generate-research-digest.
+
+    `candidates` is a list of (Paper, [eligible topic names]). Every Claude-mode topic's
+    brief is included once; paper bodies stay in the harvest files. Returns the path, or
+    None when there is nothing to review.
+    """
+    if not candidates:
         return None
     candidates_dir = config_data_dir(config) / CANDIDATES_DIR
     candidates_dir.mkdir(parents=True, exist_ok=True)
@@ -247,15 +261,12 @@ def write_candidates(config, today, store, topic_candidates, digest_path):
         'created_at': datetime.now(timezone.utc).isoformat(),
         'data_dir': str(store.data_dir),
         'digest_path': str(digest_path),
+        'exclude': list(filt.get('irrelevant_topics') or []),
         'topics': [
-            {
-                'name': topic.name,
-                'looking_for': looking_for_text(topic, config),
-                'exclude': list(filt.get('irrelevant_topics') or []),
-                'paper_ids': ids,
-            }
-            for topic, ids in topic_candidates if ids
+            {'name': t.name, 'looking_for': looking_for_text(t, config), 'keywords': list(t.keywords)}
+            for t in claude_topics
         ],
+        'papers': [{'id': paper.id, 'topics': names} for paper, names in candidates],
     }
     path = candidates_dir / f"{today}.json"
     path.write_text(json.dumps(payload, indent=2))
@@ -338,11 +349,11 @@ def main(argv=None):
               + (f"; pruned {len(removed)} old harvest file(s)" if removed else ""), flush=True)
     prune_candidates(config, today_utc)
 
-    # --- per-topic matching ----------------------------------------------------
+    # --- keyword pass: a keyword topic claims what its keywords match, first topic wins ---
     previously_seen = load_seen_arxiv_papers(config)
-    newly_seen = set()
+    claimed = set()
     sections = []
-    topic_candidates = []  # (topic, candidate papers) in topic order
+    claude_topics = []
     scholar_failures = 0
     scholar_skipped = 0
     keyword_problems = []
@@ -355,24 +366,13 @@ def main(argv=None):
             logger.warning("keyword skipped: %s", problem)
         keyword_problems.extend(problems)
 
-        # Exclude what earlier topics already took this run, so a paper lands under the
-        # first topic that claims it, as it did when the seen file was saved per topic.
-        pool, matched, candidates = match_topic(topic, new_papers, queries, previously_seen | newly_seen)
+        pool, matched = keyword_matches(topic, new_papers, queries, previously_seen | claimed)
+        claimed.update(p.url for p in matched)
         entries = [paper_entry(p) for p in matched]
-        newly_seen.update(p.url for p in matched)
-        newly_seen.update(p.url for p in candidates)
-        candidate_ids = [p.id for p in candidates]
         if topic.uses_claude:
-            known_ids = store.known_ids()
-            for pid in carried.get(topic.name, []):
-                if pid in known_ids and pid not in candidate_ids:
-                    candidate_ids.append(pid)
-        topic_candidates.append((topic, candidate_ids))
+            claude_topics.append(topic)
         if harvest_failed is None:
-            carried_note = f" (including {len(candidate_ids) - len(candidates)} carried from today's earlier run)" \
-                if len(candidate_ids) > len(candidates) else ""
-            print(f"  arXiv: {len(pool)} new papers in the topic's categories, "
-                  f"{len(matched)} keyword matches, {len(candidate_ids)} for Claude review{carried_note}", flush=True)
+            print(f"  arXiv: {len(pool)} new papers in the topic's categories, {len(matched)} keyword matches", flush=True)
 
         topic_notes = []
         if is_weekly:
@@ -395,7 +395,30 @@ def main(argv=None):
                     print(f"  Error searching Google Scholar: {type(e).__name__}: {scrub_secrets(str(e))}", flush=True)
                     scholar_failures += 1
 
-        sections.append(TopicSection(topic.name, entries, len(candidate_ids), topic_notes))
+        sections.append(TopicSection(topic.name, entries, 0, topic_notes))
+
+    # --- Claude pool: every unclaimed new paper in any Claude topic's categories, once ---
+    candidates = claude_pool(new_papers, claude_topics, previously_seen | claimed)
+    if carried:
+        by_id = {paper.id: (paper, names) for paper, names in candidates}
+        known = {p.id: p for papers in store.load().values() for p in papers}
+        claude_names = [t.name for t in claude_topics]
+        for pid, names in carried.items():
+            names = [n for n in names if n in claude_names]
+            if not names or pid not in known:
+                continue
+            if pid in by_id:
+                merged = by_id[pid][1] + [n for n in names if n not in by_id[pid][1]]
+                by_id[pid] = (by_id[pid][0], merged)
+            else:
+                by_id[pid] = (known[pid], names)
+        candidates = list(by_id.values())
+    for section in sections:
+        section.pending = sum(1 for _, names in candidates if section.name in names)
+    if claude_topics and harvest_failed is None:
+        print(f"\nClaude review: {len(candidates)} papers to read once, eligible for "
+              + ", ".join(f"'{s.name}' ({s.pending})" for s in sections if s.pending), flush=True)
+    newly_seen = claimed | {paper.url for paper, _ in candidates}
 
     # --- digest ----------------------------------------------------------------
     if keyword_problems:
@@ -416,13 +439,12 @@ def main(argv=None):
     # and the papers come back next run instead of vanishing.
     total_papers = write_digest(sections, digest_path, note=note, empty_message=empty_message, today=today)
     save_seen_arxiv_papers(config, previously_seen | newly_seen)
-    candidates_path = write_candidates(config, today, store, topic_candidates, digest_path)
+    candidates_path = write_candidates(config, today, store, claude_topics, candidates, digest_path)
 
-    pending = sum(s.pending for s in sections)
     marker = "⚠" if note else "✓"
     print(f"\n{marker} Generated digest with {total_papers} papers: {digest_path}", flush=True)
-    if pending:
-        print(f"  {pending} papers await the Claude review in {candidates_path}; run /generate-research-digest", flush=True)
+    if candidates_path:
+        print(f"  {len(candidates)} papers await the Claude review in {candidates_path}; run /generate-research-digest", flush=True)
     if scholar_skipped:
         print(f"  Google Scholar skipped for {scholar_skipped} topic(s) without keywords", flush=True)
     if note:

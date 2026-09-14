@@ -69,14 +69,22 @@ looking for: How professionals adopt and work with AI tools and agents; effects 
 - **mode**:
   - `keywords` (default): the daily run keeps papers matching a keyword
   - `claude`: the daily run records every new paper in the categories as a candidate, and
-    Claude reads them against `looking for` when you run `/generate-research-digest`.
-    Comfortable up to about 60 papers a day; above that prefer `keywords`
+    Claude reads them against `looking for` when you run `/generate-research-digest`
   - `both`: keyword matches go straight into the digest, Claude reads the rest
+  - Claude reads each candidate paper once, however many Claude topics could take it, and
+    keeps it under every eligible topic whose brief it fits, so a paper can appear under
+    two topics. What Claude reads each morning is the union of the Claude topics'
+    categories minus what keyword topics claimed; `/test-keywords` prints that total.
+    Up to about 100 a day is a quick morning step; above that give the biggest topics
+    keywords
 - **looking for**: two or three sentences on what you want and what to leave out, for
   `claude` and `both`. Continuation lines must be indented. If missing, the config's
   `filter.relevance_criteria` is used and a warning is logged.
 - **Google Scholar always searches by keyword.** A topic with no keywords is skipped on
   Sundays, with a line saying so in the digest.
+- **Keyword topics claim first.** A paper matched by a keyword goes under the first topic
+  whose keyword matches it and is not offered to the Claude review. Claude candidates are
+  never claimed by one topic ahead of another.
 
 Old-style files with only headings and keywords keep working: every topic defaults to
 `keywords` mode over all of arXiv. Run `/configure-topics` to set the three settings

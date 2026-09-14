@@ -60,7 +60,10 @@ class DryRunTests(unittest.TestCase):
         self.assertIn('"quantum widgets"', out)
         self.assertIn("[no hits]", out)
         self.assertIn("UNSUPPORTED: field prefix", out)
-        self.assertIn("Claude review would read", out)
+        self.assertIn("papers in categories per day:   09-13  09-14\n                                       1      3", out)
+        self.assertIn("Claude review: 2 papers a day eligible for this topic", out,
+                      "3 papers on the 14th minus the one Care's keyword claimed, plus 1 on the 13th, averages 2")
+        self.assertIn("Claude review total: about 2 papers a day", out)
         self.assertIn("warning: no keywords, so Google Scholar is skipped", out)
 
     def test_high_volume_flag_and_claude_hint(self):

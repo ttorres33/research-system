@@ -35,7 +35,8 @@ looking for: Methods for discovering customer needs: interviews, synthesis, and 
   Codes and their daily volumes are listed in the plugin's `config/arxiv-categories.md`.
 - **mode:** `keywords` (default) keeps papers that match a keyword; `claude` has Claude
   read every new paper in the categories against the `looking for` text each morning when
-  you run `/generate-research-digest`; `both` does both.
+  you run `/generate-research-digest`; `both` does both. Claude reads each paper once and
+  may keep it under every Claude topic it fits.
 - **looking for:** two or three sentences on what you want and what to leave out. Needed
   for `claude` and `both`. Continuation lines must be indented.
 

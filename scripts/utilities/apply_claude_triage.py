@@ -1,24 +1,26 @@
 #!/usr/bin/env python3
 """Prepare and apply the Claude review of arXiv candidates.
 
-The scheduled run records, per Claude-mode topic, the new papers Claude should read
-(.research-data/claude-candidates/<date>.json). /generate-research-digest then:
+The scheduled run records, once, every new paper that falls in the categories of at
+least one Claude-mode topic, with the topics each paper is eligible for, plus every
+Claude topic's brief (.research-data/claude-candidates/<date>.json). Claude reads each
+paper once and may keep it under any topic it is eligible for. /generate-research-digest:
 
-  1. `prepare CANDIDATES OUTDIR`  writes one markdown batch file per topic (at most
-     --batch-size papers each) with the brief, the exclusions and the papers, plus
-     OUTDIR/manifest.json listing the batches and where each agent must write its result
-  2. spawns one agent per batch file; each writes {"kept": [{"id", "why"}]} to its path
+  1. `prepare CANDIDATES OUTDIR`  writes batch files of at most --batch-size papers, each
+     carrying all the briefs and, per paper, its eligible topics, plus OUTDIR/manifest.json
+     listing the batches and where each agent must write its result
+  2. spawns one agent per batch file; each writes
+     {"kept": [{"id", "topic", "why"}]} to its path, one entry per paper and topic kept
   3. `apply CANDIDATES OUTDIR`    replaces each topic's "await Claude review" line in the
-     digest with the kept papers, rendered by the same code the scheduled run uses, and
-     marks the candidates file processed
+     digest with that topic's kept papers, rendered by the same code the scheduled run
+     uses, and marks the candidates file processed
 
-Python does the digest rewrite so Claude only returns data. A topic whose batch results
-are missing keeps its pending line and can be retried.
+Python does the digest rewrite so Claude only returns data. If any batch result is
+missing or unreadable, nothing is applied and the review can be retried.
 """
 
 import argparse
 import json
-import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -30,10 +32,7 @@ from digest import paper_entry, render_paper, replace_pending  # noqa: E402
 
 DEFAULT_BATCH_SIZE = 40
 WHY_MAX_CHARS = 200
-
-
-def slug(text):
-    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")[:40] or "topic"
+REQUIRED_KEYS = ("date", "data_dir", "digest_path", "topics", "papers")
 
 
 def load_candidates(path):
@@ -43,14 +42,40 @@ def load_candidates(path):
         sys.exit(f"cannot read candidates file {path}: {e}")
     except ValueError as e:
         sys.exit(f"candidates file {path} is not valid JSON: {e}")
-    for key in ("date", "data_dir", "digest_path", "topics"):
+    for key in REQUIRED_KEYS:
         if key not in data:
-            sys.exit(f"candidates file {path} has no '{key}' field")
+            sys.exit(f"candidates file {path} has no '{key}' field (written by an older version?)")
     return data
 
 
 def load_papers(data):
     return {paper.id: paper for papers in HarvestStore(data["data_dir"]).load().values() for paper in papers}
+
+
+def present_candidates(data, papers):
+    """[(id, [eligible topics])] for candidates whose bodies are still in the harvest files."""
+    items, missing = [], 0
+    for item in data["papers"]:
+        pid, topics = item.get("id"), list(item.get("topics", []))
+        if pid in papers and topics:
+            items.append((pid, topics))
+        else:
+            missing += 1
+    return items, missing
+
+
+def topics_block(data):
+    lines = ["## Topics", ""]
+    for topic in data["topics"]:
+        lines += [f"### {topic['name']}", "", f"Brief: {topic['looking_for']}"]
+        if topic.get("keywords"):
+            lines += ["", "Keywords the user searches with for this topic, as examples of what it covers:"]
+            lines += [f"- {keyword}" for keyword in topic["keywords"]]
+        lines.append("")
+    lines += ["## Exclude (applies to every topic)", ""]
+    lines += [f"- {item}" for item in data.get("exclude", [])] or ["- (nothing listed)"]
+    lines.append("")
+    return lines
 
 
 def prepare(candidates_path, outdir, batch_size):
@@ -59,51 +84,61 @@ def prepare(candidates_path, outdir, batch_size):
         print(f"Already processed at {data['processed_at']}; nothing to prepare.")
         return 0
     papers = load_papers(data)
+    items, missing = present_candidates(data, papers)
+    if missing:
+        print(f"warning: {missing} candidate(s) are no longer in the harvest files and cannot be reviewed", file=sys.stderr)
     outdir = Path(outdir)
     outdir.mkdir(parents=True, exist_ok=True)
+    batches = [items[i:i + batch_size] for i in range(0, len(items), batch_size)]
     manifest = []
-    number = 0
-    for topic in data["topics"]:
-        ids = [pid for pid in topic["paper_ids"] if pid in papers]
-        missing = len(topic["paper_ids"]) - len(ids)
-        if missing:
-            print(f"warning: {missing} candidate(s) for \"{topic['name']}\" are no longer in the harvest files", file=sys.stderr)
-        if not ids:
-            print(f"warning: no candidates left to review for \"{topic['name']}\"; skipped", file=sys.stderr)
-            continue
-        batches = [ids[i:i + batch_size] for i in range(0, len(ids), batch_size)]
-        for index, batch in enumerate(batches, 1):
-            number += 1
-            stem = f"batch-{number:02d}-{slug(topic['name'])}"
-            batch_path = outdir / f"{stem}.md"
-            kept_path = outdir / f"{stem}-kept.json"
-            lines = [
-                f"# Claude review: {topic['name']} (batch {index} of {len(batches)}, {len(batch)} papers)",
-                "",
-                f"Write your result to: {kept_path}",
-                'Format: {"kept": [{"id": "2609.12345", "why": "one line, at most 25 words"}]}',
-                "Keep a paper only if it fits the brief and is not excluded. Judge from the title and",
-                'abstract. If nothing fits, write {"kept": []}. Do not add papers that are not listed here.',
-                "",
-                "## Brief",
-                "",
-                topic["looking_for"],
-                "",
-                "## Exclude",
-                "",
-            ]
-            lines += [f"- {item}" for item in topic.get("exclude", [])] or ["- (nothing listed)"]
-            lines += ["", f"## Papers ({len(batch)})", ""]
-            for pid in batch:
-                paper = papers[pid]
-                lines += [f"### {pid} [{paper.primary_category}]", paper.title, "", paper.abstract, ""]
-            batch_path.write_text("\n".join(lines))
-            manifest.append({"topic": topic["name"], "batch": str(batch_path), "kept": str(kept_path), "count": len(batch)})
+    for number, batch in enumerate(batches, 1):
+        stem = f"batch-{number:02d}"
+        batch_path, kept_path = outdir / f"{stem}.md", outdir / f"{stem}-kept.json"
+        lines = [
+            f"# Claude review: batch {number} of {len(batches)} ({len(batch)} papers)",
+            "",
+            f"Write your result to: {kept_path}",
+            'Format: {"kept": [{"id": "2609.12345", "topic": "Topic name exactly as written", "why": "one line, at most 25 words"}]}',
+            "Judge each paper from its title and abstract against the topics listed under it, and only",
+            "those. Keep it under every topic whose brief it fits, one entry per paper and topic. Leave",
+            'out papers that fit nothing. If nothing in this batch fits, write {"kept": []}. Do not add',
+            "ids or topic names that are not listed here.",
+            "",
+        ]
+        lines += topics_block(data)
+        lines += [f"## Papers ({len(batch)})", ""]
+        for pid, eligible in batch:
+            paper = papers[pid]
+            lines += [f"### {pid} [{paper.primary_category}]", f"Eligible topics: {'; '.join(eligible)}", "",
+                      paper.title, "", paper.abstract, ""]
+        batch_path.write_text("\n".join(lines))
+        manifest.append({"batch": str(batch_path), "kept": str(kept_path), "count": len(batch)})
     (outdir / "manifest.json").write_text(json.dumps(manifest, indent=2))
     for item in manifest:
         print(f"{item['count']:3} papers  {item['batch']}  ->  {item['kept']}")
+    if not manifest:
+        print("no candidates left to review; apply will close the review with nothing kept")
     print(f"manifest: {outdir / 'manifest.json'}")
     return 0
+
+
+def read_results(manifest):
+    """All kept entries across batches, or None when any batch result is missing or unreadable."""
+    entries, problems = [], []
+    for item in manifest:
+        kept_path = Path(item["kept"])
+        try:
+            kept = json.loads(kept_path.read_text()).get("kept", [])
+        except (OSError, ValueError, AttributeError) as e:
+            problems.append(f"{kept_path}: unreadable ({e})")
+            continue
+        if not isinstance(kept, list):
+            problems.append(f"{kept_path}: \"kept\" is not a list")
+            continue
+        entries.extend(kept)
+    for problem in problems:
+        print(f"warning: {problem}", file=sys.stderr)
+    return None if problems else entries
 
 
 def apply(candidates_path, outdir, force=False):
@@ -116,69 +151,59 @@ def apply(candidates_path, outdir, force=False):
         sys.exit(f"no manifest at {manifest_path}; run prepare first")
     manifest = json.loads(manifest_path.read_text())
     papers = load_papers(data)
+    items, _ = present_candidates(data, papers)
+    eligible = {pid: topics for pid, topics in items}
     digest_path = Path(data["digest_path"])
     if not digest_path.exists():
         sys.exit(f"digest not found: {digest_path}")
+
+    results = read_results(manifest)
+    if results is None:
+        print("a batch result is missing or unreadable; nothing applied. Re-run that agent and apply again.", file=sys.stderr)
+        return 2
+
+    kept_by_topic = {topic["name"]: [] for topic in data["topics"]}
+    seen_pairs = set()
+    for item in results:
+        if not isinstance(item, dict):
+            print(f"warning: kept entry {item!r} is not an object with id, topic and why; ignored", file=sys.stderr)
+            continue
+        pid, topic = str(item.get("id", "")).strip(), str(item.get("topic", "")).strip()
+        if pid not in eligible:
+            print(f"warning: kept id {pid!r} was not a candidate; ignored", file=sys.stderr)
+            continue
+        if topic not in eligible[pid]:
+            print(f"warning: paper {pid} is not eligible for topic {topic!r}; ignored", file=sys.stderr)
+            continue
+        if (pid, topic) in seen_pairs:
+            continue
+        seen_pairs.add((pid, topic))
+        why = " ".join(str(item.get("why", "")).split())[:WHY_MAX_CHARS]
+        kept_by_topic[topic].append(paper_entry(papers[pid], why=why))
+
     text = digest_path.read_text()
-
-    kept_by_topic = {}
-    incomplete = set()
-    for item in manifest:
-        kept_path = Path(item["kept"])
-        if not kept_path.exists():
-            incomplete.add(item["topic"])
-            continue
-        try:
-            kept = json.loads(kept_path.read_text()).get("kept", [])
-        except (OSError, ValueError, AttributeError) as e:
-            print(f"warning: {kept_path} is unreadable ({e}); treating \"{item['topic']}\" as incomplete", file=sys.stderr)
-            incomplete.add(item["topic"])
-            continue
-        if not isinstance(kept, list):
-            print(f"warning: {kept_path}: \"kept\" is not a list; treating \"{item['topic']}\" as incomplete", file=sys.stderr)
-            incomplete.add(item["topic"])
-            continue
-        kept_by_topic.setdefault(item["topic"], []).extend(kept)
-
-    applied = []
+    applied, not_found = [], []
     for topic in data["topics"]:
         name = topic["name"]
-        if name in incomplete:
-            print(f"\"{name}\": results missing for at least one batch; pending line kept", file=sys.stderr)
-            continue
-        allowed = set(topic["paper_ids"])
-        entries, seen = [], set()
-        for item in kept_by_topic.get(name, []):
-            if not isinstance(item, dict):
-                print(f"warning: \"{name}\": kept entry {item!r} is not an object with id and why; ignored", file=sys.stderr)
-                continue
-            pid = str(item.get("id", "")).strip()
-            if pid not in allowed:
-                print(f"warning: \"{name}\": kept id {pid!r} was not a candidate; ignored", file=sys.stderr)
-                continue
-            if pid in seen or pid not in papers:
-                continue
-            seen.add(pid)
-            why = " ".join(str(item.get("why", "")).split())[:WHY_MAX_CHARS]
-            entries.append(paper_entry(papers[pid], why=why))
-        summary = f"_Claude reviewed {len(topic['paper_ids'])} candidates, kept {len(entries)}._"
-        replacement = summary + "".join(render_paper(entry) for entry in entries)
-        text, replaced = replace_pending(text, name, replacement)
+        reviewed = sum(1 for _, topics in items if name in topics)
+        entries = kept_by_topic[name]
+        summary = f"_Claude reviewed {reviewed} candidates, kept {len(entries)}._"
+        text, replaced = replace_pending(text, name, summary + "".join(render_paper(e) for e in entries))
         if not replaced:
+            not_found.append(name)
             print(f"warning: no pending line found under \"{name}\" in {digest_path}; not applied "
                   f"(was the digest rebuilt? rerun fetch_papers.py --force to restore the pending line)", file=sys.stderr)
-            incomplete.add(name)
             continue
-        applied.append((name, len(topic["paper_ids"]), len(entries)))
-        print(f"\"{name}\": reviewed {len(topic['paper_ids'])}, kept {len(entries)}")
+        applied.append({"topic": name, "reviewed": reviewed, "kept": len(entries)})
+        print(f"\"{name}\": reviewed {reviewed}, kept {len(entries)}")
 
     digest_path.write_text(text)
-    data["applied"] = [{"topic": n, "reviewed": r, "kept": k} for n, r, k in applied]
-    if not incomplete:
+    data["applied"] = applied
+    if not not_found:
         data["processed_at"] = datetime.now(timezone.utc).isoformat()
     Path(candidates_path).write_text(json.dumps(data, indent=2))
-    if incomplete:
-        print(f"{len(incomplete)} topic(s) not applied; run the missing batches and apply again", file=sys.stderr)
+    if not_found:
+        print(f"{len(not_found)} topic(s) not applied: {', '.join(not_found)}", file=sys.stderr)
         return 2
     print(f"digest updated: {digest_path}")
     return 0

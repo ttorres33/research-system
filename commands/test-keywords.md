@@ -44,8 +44,9 @@ Walk the user through what stands out:
   case-insensitive with no stemming: `worker` does not match "workers".
 - **Keywords flagged `UNSUPPORTED`** use arXiv API syntax the matcher does not support
   (`cat:`, `ti:`, `*`). They are skipped by the daily run until fixed.
-- **Claude review size** above 60 a day means the wizard would suggest keyword mode for
-  that topic; below it, Claude mode is comfortable.
+- **Claude review size** is shown per topic and, on the last line, in total: Claude reads
+  each paper once however many Claude topics could take it. A topic over 60 a day is one
+  the wizard would put in keyword mode; a total up to about 100 a day is a quick morning step.
 - Sample titles show whether a keyword is finding what the user meant. Point at concrete
   titles rather than describing them.
 

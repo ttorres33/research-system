@@ -32,10 +32,15 @@ class TriageTests(unittest.TestCase):
         self.candidates_path.parent.mkdir(parents=True)
         self.candidates_path.write_text(json.dumps({
             "date": "2026-09-14", "data_dir": str(self.data_dir), "digest_path": str(self.digest_path),
+            "exclude": ["medicine"],
             "topics": [
-                {"name": "Agents", "looking_for": "human-agent interaction", "exclude": ["medicine"],
-                 "paper_ids": ["2609.13136", "1304.2717"]},
-                {"name": "Care", "looking_for": "care coordination", "exclude": [], "paper_ids": ["2609.12070"]},
+                {"name": "Agents", "looking_for": "human-agent interaction", "keywords": ["agent AND developer"]},
+                {"name": "Care", "looking_for": "care coordination", "keywords": []},
+            ],
+            "papers": [
+                {"id": "2609.13136", "topics": ["Agents"]},
+                {"id": "1304.2717", "topics": ["Agents", "Care"]},
+                {"id": "2609.12070", "topics": ["Care"]},
             ],
         }))
         self.outdir = root / "triage"
@@ -52,86 +57,112 @@ class TriageTests(unittest.TestCase):
     def manifest(self):
         return json.loads((self.outdir / "manifest.json").read_text())
 
-    def test_prepare_writes_batches_and_manifest(self):
-        code, out, _ = self.run_cli("prepare", str(self.candidates_path), str(self.outdir), "--batch-size", "1")
+    def test_prepare_writes_batches_with_all_briefs_and_eligibility(self):
+        code, out, _ = self.run_cli("prepare", str(self.candidates_path), str(self.outdir), "--batch-size", "2")
         self.assertEqual(code, 0)
         manifest = self.manifest()
-        self.assertEqual([(m["topic"], m["count"]) for m in manifest], [("Agents", 1), ("Agents", 1), ("Care", 1)])
+        self.assertEqual([m["count"] for m in manifest], [2, 1])
         batch = Path(manifest[0]["batch"]).read_text()
-        self.assertIn("# Claude review: Agents (batch 1 of 2, 1 papers)", batch)
+        self.assertIn("# Claude review: batch 1 of 2 (2 papers)", batch)
         self.assertIn(f"Write your result to: {manifest[0]['kept']}", batch)
-        self.assertIn("## Brief\n\nhuman-agent interaction", batch)
-        self.assertIn("- medicine", batch)
-        self.assertIn("### 2609.13136 [cs.HC]\nFrom Review to Reuse", batch)
+        self.assertIn('"topic": "Topic name exactly as written"', batch)
+        self.assertIn("### Agents\n\nBrief: human-agent interaction", batch)
+        self.assertIn("- agent AND developer", batch, "keywords given as examples")
+        self.assertIn("### Care\n\nBrief: care coordination", batch)
+        self.assertIn("## Exclude (applies to every topic)\n\n- medicine", batch)
+        self.assertIn("### 2609.13136 [cs.HC]\nEligible topics: Agents\n\nFrom Review to Reuse", batch)
+        self.assertIn("### 1304.2717 [cs.AI]\nEligible topics: Agents; Care", batch)
         self.assertIn("manifest:", out)
 
-    def test_apply_replaces_pending_lines_and_marks_processed(self):
-        self.run_cli("prepare", str(self.candidates_path), str(self.outdir))
+    def test_apply_sorts_kept_papers_into_topics_and_marks_processed(self):
+        self.run_cli("prepare", str(self.candidates_path), str(self.outdir), "--batch-size", "2")
         manifest = self.manifest()
         Path(manifest[0]["kept"]).write_text(json.dumps({"kept": [
-            {"id": "2609.13136", "why": "developers reviewing agent work"},
-            {"id": "9999.99999", "why": "not a candidate"},
+            {"id": "2609.13136", "topic": "Agents", "why": "developers reviewing agent work"},
+            {"id": "1304.2717", "topic": "Agents", "why": "old but fits"},
+            {"id": "1304.2717", "topic": "Care", "why": "fits care too"},
+            {"id": "1304.2717", "topic": "Care", "why": "duplicate pair"},
+            {"id": "2609.13136", "topic": "Care", "why": "not eligible for Care"},
+            {"id": "9999.99999", "topic": "Agents", "why": "not a candidate"},
         ]}))
         Path(manifest[1]["kept"]).write_text(json.dumps({"kept": []}))
         code, out, err = self.run_cli("apply", str(self.candidates_path), str(self.outdir))
         self.assertEqual(code, 0, err)
         text = self.digest_path.read_text()
-        self.assertIn("\n## Agents\n\n_Claude reviewed 2 candidates, kept 1._\n### From Review to Reuse", text)
+        self.assertIn("\n## Agents\n\n_Claude reviewed 2 candidates, kept 2._\n### From Review to Reuse", text)
         self.assertIn("**Why:** developers reviewing agent work\n", text)
-        self.assertIn("\n## Care\n\n_Claude reviewed 1 candidates, kept 0._\n", text)
+        self.assertIn("\n## Care\n\n_Claude reviewed 2 candidates, kept 1._\n### Bayesian Prediction", text,
+                      "the same paper appears under both topics it fits")
+        self.assertEqual(text.count("### Bayesian Prediction"), 2)
         self.assertNotIn("await Claude review", text)
         self.assertIn("### A Replaced Paper", text, "keyword section untouched")
         self.assertIn("not a candidate; ignored", err)
+        self.assertIn("not eligible for topic 'Care'; ignored", err)
         data = json.loads(self.candidates_path.read_text())
         self.assertIn("processed_at", data)
-        self.assertEqual(data["applied"], [{"topic": "Agents", "reviewed": 2, "kept": 1}, {"topic": "Care", "reviewed": 1, "kept": 0}])
+        self.assertEqual(data["applied"], [{"topic": "Agents", "reviewed": 2, "kept": 2}, {"topic": "Care", "reviewed": 2, "kept": 1}])
         code, out, _ = self.run_cli("apply", str(self.candidates_path), str(self.outdir))
         self.assertEqual(code, 0)
         self.assertIn("Already processed", out)
 
-    def test_missing_batch_result_keeps_that_topic_pending(self):
-        self.run_cli("prepare", str(self.candidates_path), str(self.outdir))
+    def test_missing_batch_result_applies_nothing(self):
+        self.run_cli("prepare", str(self.candidates_path), str(self.outdir), "--batch-size", "2")
         manifest = self.manifest()
-        Path(manifest[1]["kept"]).write_text(json.dumps({"kept": [{"id": "2609.12070", "why": "fits"}]}))
+        Path(manifest[1]["kept"]).write_text(json.dumps({"kept": [{"id": "2609.12070", "topic": "Care", "why": "fits"}]}))
+        before = self.digest_path.read_text()
         code, _, err = self.run_cli("apply", str(self.candidates_path), str(self.outdir))
         self.assertEqual(code, 2)
-        text = self.digest_path.read_text()
-        self.assertIn("_2 papers await Claude review.", text, "Agents still pending")
-        self.assertIn("_Claude reviewed 1 candidates, kept 1._", text, "Care applied")
+        self.assertEqual(self.digest_path.read_text(), before, "a missing batch means nothing is applied")
         self.assertNotIn("processed_at", json.loads(self.candidates_path.read_text()))
-        self.assertIn("Agents", err)
+        self.assertIn("nothing applied", err)
 
     def test_malformed_kept_entries_are_ignored_not_fatal(self):
         self.run_cli("prepare", str(self.candidates_path), str(self.outdir))
         manifest = self.manifest()
-        Path(manifest[0]["kept"]).write_text('{"kept": ["2609.13136", {"id": "1304.2717", "why": "old but fits"}]}')
-        Path(manifest[1]["kept"]).write_text('{"kept": {"id": "2609.12070"}}')
+        Path(manifest[0]["kept"]).write_text('{"kept": ["2609.13136", {"id": "1304.2717", "topic": "Care", "why": "old but fits"}]}')
         code, _, err = self.run_cli("apply", str(self.candidates_path), str(self.outdir))
-        self.assertEqual(code, 2, "Care's result was not a list, so Care stays pending")
+        self.assertEqual(code, 0, err)
         text = self.digest_path.read_text()
-        self.assertIn("_Claude reviewed 2 candidates, kept 1._\n### Bayesian Prediction", text, "the well-formed entry applied")
-        self.assertIn("is not an object with id and why; ignored", err)
-        self.assertIn("_1 paper awaits Claude review.", text)
+        self.assertIn("\n## Care\n\n_Claude reviewed 2 candidates, kept 1._\n### Bayesian Prediction", text)
+        self.assertIn("is not an object with id, topic and why; ignored", err)
+
+    def test_result_that_is_not_a_list_applies_nothing(self):
+        self.run_cli("prepare", str(self.candidates_path), str(self.outdir))
+        manifest = self.manifest()
+        Path(manifest[0]["kept"]).write_text('{"kept": {"id": "2609.12070"}}')
+        code, _, err = self.run_cli("apply", str(self.candidates_path), str(self.outdir))
+        self.assertEqual(code, 2)
+        self.assertIn("await Claude review", self.digest_path.read_text())
 
     def test_missing_pending_line_leaves_the_file_unprocessed(self):
         self.run_cli("prepare", str(self.candidates_path), str(self.outdir))
         manifest = self.manifest()
-        Path(manifest[0]["kept"]).write_text('{"kept": [{"id": "2609.13136", "why": "fits"}]}')
-        Path(manifest[1]["kept"]).write_text('{"kept": []}')
+        Path(manifest[0]["kept"]).write_text('{"kept": [{"id": "2609.13136", "topic": "Agents", "why": "fits"}]}')
         self.digest_path.write_text("# Research Digest - 2026-09-14\n\n**No papers today.**\n")
         code, _, err = self.run_cli("apply", str(self.candidates_path), str(self.outdir))
         self.assertEqual(code, 2)
         self.assertIn("rerun fetch_papers.py --force", err)
         self.assertNotIn("processed_at", json.loads(self.candidates_path.read_text()))
 
-    def test_prepare_skips_topics_whose_candidates_are_gone(self):
+    def test_prepare_skips_candidates_whose_bodies_are_gone(self):
         data = json.loads(self.candidates_path.read_text())
-        data["topics"][1]["paper_ids"] = ["0000.00000"]
+        data["papers"].append({"id": "0000.00000", "topics": ["Care"]})
         self.candidates_path.write_text(json.dumps(data))
         code, _, err = self.run_cli("prepare", str(self.candidates_path), str(self.outdir))
         self.assertEqual(code, 0)
-        self.assertEqual([m["topic"] for m in self.manifest()], ["Agents"])
-        self.assertIn('no candidates left to review for "Care"', err)
+        self.assertEqual([m["count"] for m in self.manifest()], [3])
+        self.assertIn("1 candidate(s) are no longer in the harvest files", err)
+
+    def test_all_candidates_gone_closes_the_review_with_nothing_kept(self):
+        data = json.loads(self.candidates_path.read_text())
+        data["papers"] = [{"id": "0000.00000", "topics": ["Care"]}]
+        self.candidates_path.write_text(json.dumps(data))
+        code, out, _ = self.run_cli("prepare", str(self.candidates_path), str(self.outdir))
+        self.assertEqual(code, 0)
+        self.assertIn("no candidates left to review", out)
+        code, _, _ = self.run_cli("apply", str(self.candidates_path), str(self.outdir))
+        self.assertEqual(code, 0)
+        self.assertIn("_Claude reviewed 0 candidates, kept 0._", self.digest_path.read_text())
 
     def test_prepare_refuses_processed_file(self):
         data = json.loads(self.candidates_path.read_text())

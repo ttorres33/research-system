@@ -98,6 +98,8 @@ def main():
 
     topics = load_topics(keywords_path)
     day_label = " ".join(f"{d[5:]:>6}" for d in days)
+    claimed = {d: set() for d in days}          # ids keyword topics take, first topic wins
+    claude_pool = {d: set() for d in days}      # ids Claude would read once, any Claude topic
     for topic in topics:
         print(f"== {topic.name}  (mode: {topic.mode}; categories: {', '.join(topic.categories) or 'all of arXiv'})")
         for warning in topic.warnings:
@@ -106,6 +108,7 @@ def main():
         print(f"   papers in categories per day:  {day_label}")
         print(f"   {'':30} " + " ".join(f"{len(pools[d]):6}" for d in days))
         matched_ids = defaultdict(set)
+        pools = {d: [p for p in pools[d] if p.id not in claimed[d]] for d in days}
         for keyword in topic.keywords:
             try:
                 query = parse(keyword)
@@ -130,13 +133,23 @@ def main():
                     print(f"         {paper.id} [{paper.primary_category}] {paper.title[:90]}")
                     shown += 1
                 matched_ids[d].update(p.id for p in hits[d])
+        if topic.uses_keywords:
+            for d in days:
+                claimed[d].update(matched_ids[d])
         if topic.uses_claude:
-            pool_sizes = [len(pools[d]) - (len(matched_ids[d]) if topic.uses_keywords else 0) for d in days]
-            avg = sum(pool_sizes) / len(days)
+            per_day = []
+            for d in days:
+                eligible = {p.id for p in pools[d]} - (matched_ids[d] if topic.uses_keywords else set())
+                claude_pool[d].update(eligible)
+                per_day.append(len(eligible))
+            avg = sum(per_day) / len(days)
             hint = (" (over %d a day: consider keyword mode for this topic)" % CLAUDE_POOL_PER_DAY
                     if avg > CLAUDE_POOL_PER_DAY else "")
-            print(f"   Claude review would read {avg:.0f} papers a day for this topic{hint}")
+            print(f"   Claude review: {avg:.0f} papers a day eligible for this topic{hint}")
         print()
+    if any(t.uses_claude for t in topics):
+        total = sum(len(claude_pool[d]) for d in days) / len(days)
+        print(f"Claude review total: about {total:.0f} papers a day, each read once against every Claude topic it is eligible for")
     return 0
 
 

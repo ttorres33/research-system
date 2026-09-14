@@ -22,7 +22,7 @@ The Research System automates your research workflow in a simple daily cycle:
 ## Features
 
 - **Automated Discovery**: A daily arXiv harvest over OAI-PMH (two to five requests, no API key) plus weekly Google Scholar searches
-- **Per-Topic Picking**: Keyword matching, a Claude review against a short brief, or both, scoped to the arXiv categories you choose
+- **Per-Topic Picking**: Keyword matching, a Claude review against a short brief, or both, scoped to the arXiv categories you choose. Claude reads each new paper once and files it under every topic it fits
 - **Keyword Dry Run**: `/test-keywords` shows what each keyword matches against the last week of arXiv papers before it reaches a digest
 - **PDF Monitoring**: Automatically detects new PDFs you save to Sources/ folders
 - **AI Summarization**: Generates concise bullet-point summaries with semantic tags

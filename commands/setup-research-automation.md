@@ -122,6 +122,9 @@ once before this step.
      enough for Claude to read every morning against a short description of what you want.
      That catches papers your keywords would miss."
    - Explain `both`: keyword matches go straight into the digest and Claude reads the rest.
+   - Explain that Claude reads each paper once whatever the number of Claude topics, and
+     files it under every topic it fits, so overlapping categories between topics cost
+     nothing extra.
    - If the user picks `keywords` and gave no keywords, say the topic would match nothing
      and ask for at least one keyword or a different mode.
    - Store as `mode`.

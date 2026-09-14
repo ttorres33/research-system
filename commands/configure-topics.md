@@ -77,6 +77,9 @@ For each topic, in file order, one at a time:
    - Otherwise recommend `claude`. "About [N] papers a day, few enough for Claude to read
      every morning against a short brief. That catches papers your keywords would miss."
    - Explain `both`: keyword matches go straight into the digest and Claude reads the rest.
+   - Explain that Claude reads each paper once whatever the number of Claude topics, and
+     files it under every topic it fits, so overlapping categories between topics cost
+     nothing extra; the dry run's last line shows the daily total Claude would read.
    - If the topic already has a mode, show it and ask whether to keep it.
    - If the user picks `keywords` and the topic has no keywords, say it would match
      nothing and ask for at least one keyword or a different mode.
