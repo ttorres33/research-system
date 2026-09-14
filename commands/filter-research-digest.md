@@ -19,6 +19,7 @@ Filter a research digest to show only papers relevant to your business focus.
 3. Extract paths:
    - `paths.research_root` - base directory
    - `paths.daily_digests` - where digests are stored
+   - `paths.data` - tracking directory; `candidates_dir = research_root/paths.data/claude-candidates`
 4. Extract link format:
    - `links.format` - "obsidian" or "markdown"
 
@@ -40,6 +41,13 @@ Filter a research digest to show only papers relevant to your business focus.
 
 3. Construct digest path: `research_root + "/" + daily_digests + "/" + date + ".md"`
 4. Verify digest exists, show error if not found
+5. **Check the Claude review has run for that date:** if `candidates_dir/[date].json` exists and
+   has no `processed_at` field, stop and tell the user:
+   ```
+   The [date] digest still has arXiv papers waiting for the Claude review, so filtering it now
+   would miss them. Run /generate-research-digest first, then /filter-research-digest.
+   ```
+   (Only dates whose scheduled run had topics in Claude mode have such a file.)
 
 ## Step 3: Read and Analyze Digest
 
@@ -174,6 +182,7 @@ Filtered digest: daily-digests/2025-11-02-filtered.md
 - **Digest file not found**: Show clear error with available digest dates
 - **No filter criteria configured**: Suggest running `/setup-research-automation` or `/update-research-filters`
 - **Empty filter result**: Warn user that all papers were filtered out, suggest reviewing criteria
+- **Claude review pending for the chosen date**: Stop with the message in Step 2.5; do not filter a digest whose arXiv sections are incomplete
 - **Agent failures**: Retry failed sections, continue with others
 - **calculate_dates.py fails**: Fall back to system date command
 
@@ -183,6 +192,7 @@ Filtered digest: daily-digests/2025-11-02-filtered.md
 - Process in batches of ~30-50 papers per agent for optimal performance
 - Sunday digests typically have 200-300 papers and benefit most from this approach
 - Filtering happens at the paper level (title + snippet analysis)
+- Run `/generate-research-digest` before this command so the arXiv sections are complete; this command refuses a digest whose Claude review is still pending
 - More specific filter criteria = better results
 
 ## Filter Criteria Examples

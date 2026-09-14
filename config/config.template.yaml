@@ -4,10 +4,6 @@
 serpapi:
   api_key: ""  # Get from https://serpapi.com/ (required for Google Scholar)
 
-arxiv:
-  max_results: 10    # Papers per keyword per day
-  days_back: 1       # Search last N days
-
 google_scholar:
   max_results: 10    # Papers per keyword per week
   search_days: 7     # Look back N days (weekly search on Sundays)
@@ -15,7 +11,7 @@ google_scholar:
 paths:
   research_root: "."                    # Base directory for research files
   daily_digests: "daily-digests"        # Where digests are stored (relative to research_root)
-  data: ".research-data"                # Tracking files (.seen_*.json, .processed_*.json)
+  data: ".research-data"                # Tracking files, harvest files, Claude review candidates
 
 links:
   format: "obsidian"                    # "obsidian" for [[wiki-links]] or "markdown" for [text](path)
@@ -25,3 +21,6 @@ filter:
   relevant_topics: []                   # Topics to keep (e.g., ["user research", "decision making"])
   irrelevant_topics: []                 # Topics to filter out (e.g., ["pure mathematics", "agriculture"])
   relevance_criteria: ""                # What makes a paper relevant (one sentence)
+
+# arXiv needs no settings: every new paper is harvested once a day and matched per topic
+# according to the categories and mode in keywords.md. See config/README.md.

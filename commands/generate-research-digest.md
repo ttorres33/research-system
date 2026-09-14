@@ -21,6 +21,7 @@ Generate summaries for new research papers and create a daily digest file.
    - `digest_dir = research_root + "/" + daily_digests`
    - `data_dir = research_root + "/" + data`
    - `queue_file = data_dir + "/.research-queue.json"`
+   - `candidates_dir = data_dir + "/claude-candidates"` (arXiv papers waiting for the Claude review)
 
 ## Step 2: Get Today's Date
 
@@ -113,6 +114,66 @@ For each item in the queue:
 3. Store status for final report: `digest_exists = true/false`
 4. **Continue to next step even if digest doesn't exist - will be noted in final report**
 
+## Step 5b: Claude Review of arXiv Candidates
+
+The scheduled run records, for every topic in `claude` or `both` mode, the new arXiv papers
+in that topic's categories that Claude should read. The digest shows them as one line per
+topic: `_N papers await Claude review. Run /generate-research-digest._` This step does the
+review and writes the keepers into the digest. Run it before Step 6 so the archived and
+linked digest is complete.
+
+1. **Find today's candidates:** `candidates_file = candidates_dir + "/" + today_date + ".json"`
+   - If it does not exist: set `review_status = "no candidates"` and skip to Step 6
+   - Read it. If it has a `processed_at` field: set `review_status = "already done"` and skip to Step 6
+   - Also list any other `*.json` in `candidates_dir` without `processed_at` (earlier days the
+     command was not run); store their dates as `older_candidates` for the report. Do not process them here.
+
+2. **Check for a stale filtered digest:** if `digest_dir + "/" + today_date + "-filtered.md"`
+   exists, set `filtered_stale = true`; it was made before this review and must be regenerated
+   with `/filter-research-digest` afterwards (tell the user in the report).
+
+3. **Prepare the batch files.** Use a fixed working directory for the day,
+   `triage_dir = /tmp/research-triage-{today_date}`, and write both paths out in full
+   (each bash call starts a fresh shell, so do not rely on shell variables between steps):
+   ```bash
+   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/utilities/apply_claude_triage.py prepare "[candidates_file]" "/tmp/research-triage-[today_date]"
+   ```
+   This writes one markdown file per topic batch (at most 40 papers each) with the topic's
+   brief, its exclusions and the papers (id, category, title, abstract), plus
+   `manifest.json` in that directory listing each batch file and the path its result must be
+   written to. Read the manifest to get the batch file paths for the next step.
+
+4. **Spawn one agent per batch file, in parallel,** using the Task tool. Each agent receives
+   the batch file path (not its content) and these instructions:
+   ```
+   Review arXiv papers for one research topic.
+
+   1. Read the batch file: [batch_path]. Its header states where to write your result and
+      the exact JSON format; the "Brief" section says what the user is looking for and the
+      "Exclude" section what to leave out.
+   2. For each paper under "Papers", decide from the title and abstract whether it fits the
+      brief and is not excluded. Be selective: the user reads every paper you keep.
+   3. Write the result file named in the header as JSON: {"kept": [{"id": "...", "why": "..."}]}
+      with one entry per kept paper and a "why" of at most 25 words. If nothing fits, write
+      {"kept": []}. Only ids from the batch file are allowed.
+   ```
+
+5. **Wait for all agents**, then apply the results:
+   ```bash
+   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/utilities/apply_claude_triage.py apply "[candidates_file]" "/tmp/research-triage-[today_date]"
+   ```
+   Python rewrites the digest: each topic's pending line becomes
+   `_Claude reviewed N candidates, kept K._` followed by the kept papers in the digest's
+   normal format with a `**Why:**` line, and the candidates file gets `processed_at`.
+   The command prints one line per topic (`"Topic": reviewed N, kept K`); keep them for the report.
+   - Exit code 2 means a topic could not be applied: a batch result was missing or unreadable,
+     or the digest no longer had that topic's pending line. The candidates file is left
+     unprocessed. For a missing result, re-run that agent and `apply` again. For a missing
+     pending line (the digest was rebuilt by a manual fetch), run `fetch_papers.py --force`
+     and start this step over. Do not hand-edit the digest.
+
+6. **Clean up:** `rm -rf "/tmp/research-triage-[today_date]"`. Set `review_status = "done"` with the per-topic counts.
+
 ## Step 6: Archive Previous research-today.md
 
 Before creating the new file:
@@ -146,6 +207,8 @@ Before creating the new file:
 [Create link to today's digest using config link format]
 - If obsidian: [[daily-digests/YYYY-MM-DD]]
 - If markdown: [View Today's Digest](daily-digests/YYYY-MM-DD.md)
+
+[If review_status is "done": add a line "Claude review: kept K of N arXiv candidates across M topics"]
 
 [Check if filtered digest exists: daily-digests/YYYY-MM-DD-filtered.md]
 [If filtered digest exists, add a second link on the next line]
@@ -242,16 +305,23 @@ Generated on 2025-11-03 10:30 AM
    - Number skipped due to errors: "[X] papers skipped" with brief reason
    - If no items to process: "No papers needed processing."
 
-3. **Daily Digest Status:**
+3. **Claude Review Status:**
+   - If review_status is "done": "Claude reviewed [N] arXiv candidates across [M] topics and kept [K]" plus the per-topic lines
+   - If "already done": "Claude review already applied earlier today"
+   - If "no candidates": "No arXiv papers were waiting for a Claude review" (every topic is in keyword mode, or nothing new landed in the Claude topics' categories)
+   - If `older_candidates` is not empty: "Unreviewed candidates from earlier days: [dates]. They were not processed; the harvest files behind them are kept for 7 days."
+   - If `filtered_stale` is true: "The filtered digest for today was made before this review; run /filter-research-digest again to include the kept papers"
+
+4. **Daily Digest Status:**
    - If digest exists: "Today's digest available at: [path]"
    - If digest doesn't exist: "No digest for today. Run fetch_papers.py to retrieve papers."
    - If filtered digest exists: "Filtered digest also available."
 
-4. **Output Files:**
+5. **Output Files:**
    - Location of research-today.md file: "[full_path]"
    - If previous research-today.md was archived: "Previous digest archived to: [archive_path]"
 
-5. **Next Steps (if applicable):**
+6. **Next Steps (if applicable):**
    - If digest missing: "Run fetch_papers.py to fetch today's papers from arXiv"
    - If papers skipped: "Review skipped papers listed in research-today.md"
    - If queue was missing: "Set up the cron job to automatically monitor sources"
@@ -329,6 +399,9 @@ Next Steps:
 - **calculate_dates.py fails**: Fall back to system date command, continue
 - **Invalid link format in config**: Default to obsidian format with warning, continue
 - **Daily digest not found**: Note in research-today.md and final report, continue
+- **Candidates file unreadable or `prepare` fails**: Report the error, leave the pending lines in the digest, continue
+- **A review agent fails or writes no result**: `apply` reports the topic and keeps its pending line; re-run that agent and `apply` again, then continue
+- **`apply` cannot find a topic's pending line**: The digest was edited by hand or already processed; report it and continue
 - **No new papers to process**: Complete successfully with informative report
 
 **Key principle: Always complete execution and provide comprehensive status report**
@@ -340,3 +413,5 @@ Next Steps:
 - The research-today.md file is regenerated each time (overwrites previous)
 - Queue is only cleared after successful processing of all items
 - **Always respect the link format setting** - this ensures compatibility with user's markdown viewer
+- **Order on Sundays: run this command before `/filter-research-digest`.** The filter reads the digest file, so a filtered digest made before the Claude review will not contain the kept papers
+- The Claude review reads only title and abstract; the brief comes from each topic's `looking for` setting in `keywords.md` (or the config's filter criteria when a topic has none)

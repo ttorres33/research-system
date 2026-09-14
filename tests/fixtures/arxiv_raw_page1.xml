@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://www.openarchives.org/OAI/2.0/ http://www.openarchives.org/OAI/2.0/OAI-PMH.xsd">
+  <responseDate>2026-09-14T17:41:20Z</responseDate>
+  <request verb="ListRecords" metadataPrefix="arXivRaw" from="2026-09-13">https://oaipmh.arxiv.org/oai</request>
+  <ListRecords>
+    <record>
+      <header>
+        <identifier>oai:arXiv.org:2609.12070</identifier>
+        <datestamp>2026-09-14</datestamp>
+        <setSpec>cs:cs:HC</setSpec>
+      </header>
+      <metadata>
+        <arXivRaw xmlns="http://arxiv.org/OAI/arXivRaw/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://arxiv.org/OAI/arXivRaw/ https://oaipmh.arxiv.org/OAI/arXivRaw.xsd">
+          <id>2609.12070</id>
+          <submitter>A. Author</submitter>
+          <version version="v1">
+            <date>Thu, 10 Sep 2026 18:02:43 GMT</date>
+            <size>1234kb</size>
+          </version>
+          <title>"The Only Thing Certain About This is Uncertainty":
+  Exploring Informal Care   Coordination</title>
+          <authors>Ada Author, Bo Builder</authors>
+          <categories>cs.HC cs.CY</categories>
+          <comments>12 pages, 3 figures</comments>
+          <license>http://creativecommons.org/licenses/by/4.0/</license>
+          <abstract>  Older adults aging in place often have informal support systems.
+  As they age, many deal with new &amp; uncertain needs.  </abstract>
+        </arXivRaw>
+      </metadata>
+    </record>
+    <record>
+      <header>
+        <identifier>oai:arXiv.org:2204.07865</identifier>
+        <datestamp>2026-09-14</datestamp>
+        <setSpec>cs:cs:HC</setSpec>
+      </header>
+      <metadata>
+        <arXivRaw xmlns="http://arxiv.org/OAI/arXivRaw/">
+          <id>2204.07865</id>
+          <submitter>C. Contributor</submitter>
+          <version version="v1"><date>Sat, 16 Apr 2022 20:18:03 GMT</date><size>729kb</size></version>
+          <version version="v2"><date>Tue, 08 Sep 2026 02:40:26 GMT</date><size>731kb</size></version>
+          <version version="v3"><date>Fri, 11 Sep 2026 01:22:57 GMT</date><size>464kb</size></version>
+          <title>A Replaced Paper</title>
+          <authors>Cy Contributor</authors>
+          <categories>cs.HC</categories>
+          <abstract>Third version of an older paper.</abstract>
+        </arXivRaw>
+      </metadata>
+    </record>
+    <record>
+      <header>
+        <identifier>oai:arXiv.org:1304.2717</identifier>
+        <datestamp>2026-09-13</datestamp>
+        <setSpec>cs:cs:AI</setSpec>
+      </header>
+      <metadata>
+        <arXivRaw xmlns="http://arxiv.org/OAI/arXivRaw/">
+          <id>1304.2717</id>
+          <submitter>D. Dated</submitter>
+          <version version="v1"><date>Wed, 27 Mar 2013 04:00:00 GMT</date><size>100kb</size></version>
+          <title>Bayesian Prediction for Artificial Intelligence</title>
+          <authors>Matthew Self, Peter Cheeseman</authors>
+          <categories>cs.AI</categories>
+          <abstract>An old single-version paper that was cross-listed today.</abstract>
+        </arXivRaw>
+      </metadata>
+    </record>
+    <record>
+      <header status="deleted">
+        <identifier>oai:arXiv.org:2609.00001</identifier>
+        <datestamp>2026-09-14</datestamp>
+      </header>
+    </record>
+    <resumptionToken expirationDate="2026-09-15T00:00:00Z">6893203|1301</resumptionToken>
+  </ListRecords>
+</OAI-PMH>

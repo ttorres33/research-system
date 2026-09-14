@@ -12,7 +12,7 @@ Guide you through complete setup of the research automation system.
 
 1. Welcome user: "Welcome to Research System setup! I'll help you configure automated paper discovery and summarization."
 2. Check Python dependencies:
-   - Run `pip3 list | grep -E "(arxiv|serpapi|PyYAML|pypdf)"`
+   - Run `pip3 list | grep -E "(requests|serpapi|PyYAML|pypdf)"`
    - If any missing, show installation command: `pip3 install -r ${CLAUDE_PLUGIN_ROOT}/requirements.txt`
 
 ## Step 2: Gather Basic Configuration
@@ -70,31 +70,74 @@ Do you have a SerpAPI key for Google Scholar searches?
 
 Store as `serpapi_key` (empty string if skipped)
 
-## Step 3: Interactive Keyword Setup
+## Step 3: Interactive Topic Setup
 
-1. Explain: "Let's set up research topics you want to track. You can have multiple topics, each with several keyword searches."
+Each topic has a name, optional keywords, the arXiv categories it covers, and a mode that
+says how new arXiv papers are picked for it. The plugin's `config/arxiv-categories.md`
+lists every category with its name and rough number of new papers per weekday; read it
+once before this step.
+
+1. Explain: "Let's set up the research topics you want to track. For each topic I'll ask
+   for keywords, which arXiv areas to watch, and whether new papers should be picked by
+   keyword or read by Claude."
 
 2. Ask: "What's your first research topic?" (e.g., "AI & Productivity")
 
-3. For each topic, guide through creating keywords:
+3. **Keywords** for the topic:
    ```
-   Great! Now let's add search keywords for "[topic name]".
+   Now some search keywords for "[topic name]". These are optional for topics Claude will
+   read, but they are also how Google Scholar searches this topic on Sundays: a topic
+   with no keywords gets no Google Scholar search.
 
-   Tips for keywords:
-   - Use AND to require multiple terms: "LLM AND workplace"
+   Tips:
+   - Matching is whole-word and case-insensitive, with no stemming: "worker" does not match "workers"
    - Use quotes for exact phrases: "knowledge work"
-   - Combine terms with OR (happens automatically across keywords)
+   - Use AND to require terms, OR for alternatives, parentheses to group: "customer interview" AND (LLM OR AI)
+   - Phrases with a second meaning in machine learning ("active learning", "decision making",
+     "modeling") need a category restriction or a narrower phrase
 
-   Enter keywords one at a time (or 'done' when finished):
+   Enter keywords one at a time (or 'done' when finished; 'none' for no keywords):
    ```
+   Collect until the user says done or none.
 
-4. Collect keywords for topic (keep asking until user says "done")
+4. **Categories** for the topic:
+   - From the topic name and its keywords, propose 2-5 category codes from
+     `config/arxiv-categories.md`, showing each code's name and new papers per weekday and
+     the total, for example:
+     ```
+     For "AI & Productivity" I'd suggest:
+     - cs.HC  Human-Computer Interaction     ~16/day
+     - cs.CY  Computers and Society          ~8/day
+     - econ.GN General Economics             ~3/day
+     Total about 27 new papers a day. Keep these, add or remove codes, or say "all" to
+     search every arXiv category (only sensible for very specific keywords).
+     ```
+   - Store the confirmed list as `categories` (empty list for "all").
 
-5. Ask: "Add another research topic? (yes/no)"
+5. **Mode** for the topic. Add up the per-day volumes of the chosen categories:
+   - If the total is more than 60 a day, or the user chose "all", recommend `keywords`:
+     "These categories produce about [N] papers a day, too many for Claude to read each
+     morning. I'd suggest keyword mode: the daily run keeps papers matching your keywords."
+   - Otherwise recommend `claude`: "These categories produce about [N] papers a day, few
+     enough for Claude to read every morning against a short description of what you want.
+     That catches papers your keywords would miss."
+   - Explain `both`: keyword matches go straight into the digest and Claude reads the rest.
+   - If the user picks `keywords` and gave no keywords, say the topic would match nothing
+     and ask for at least one keyword or a different mode.
+   - Store as `mode`.
 
-6. Repeat for all topics
+6. **Looking for**, only if the mode is `claude` or `both`:
+   ```
+   In two or three sentences, what are you looking for in "[topic name]", and what should
+   be left out? Claude reads each new paper's title and abstract against this.
+   Example: "How professionals adopt and work with AI tools and agents in day-to-day work;
+   effects on productivity, skills and collaboration. Not model benchmarks or training methods."
+   ```
+   Store as `looking_for`.
 
-7. Build keywords.md content from collected topics and keywords
+7. Ask: "Add another research topic? (yes/no)" and repeat.
+
+8. Build the keywords.md content from the collected topics (format in Step 5).
 
 ## Step 4: Setup Filter Criteria
 
@@ -145,10 +188,6 @@ Store as `relevance_criteria`
 serpapi:
   api_key: "[serpapi_key]"
 
-arxiv:
-  max_results: 10
-  days_back: 1
-
 google_scholar:
   max_results: 10
   search_days: 7
@@ -183,12 +222,16 @@ integration:
 
 [For each topic:]
 ## [Topic Name]
+categories: [comma-separated codes; omit the line when the user chose "all"]
+mode: [keywords | claude | both; omit the line for keywords]
+looking for: [the looking_for text; omit the line when the mode is keywords]
 [For each keyword in topic:]
 - [keyword]
 
 ```
 
-Write to `{research_root}/.research-data/keywords.md`
+Write to `{research_root}/.research-data/keywords.md`. A `looking for` value may run over
+several lines if the continuation lines are indented.
 
 ## Step 6: Create Directory Structure
 
@@ -246,12 +289,15 @@ Proceed? (yes/no)
 
 Run validation checks:
 
-1. **Test paper fetching:**
+1. **Run one real fetch** (the only network step in setup; two to five requests to
+   arXiv's OAI-PMH endpoint, plus Google Scholar if today is Sunday and a key was given):
    ```bash
-   cd ${CLAUDE_PLUGIN_ROOT}/scripts/automation && python3 fetch_papers.py --test
+   cd ${CLAUDE_PLUGIN_ROOT}/scripts/automation && python3 fetch_papers.py
    ```
-   - Check if it runs without errors
-   - Verify config is readable
+   - Check it runs without errors and reports the number of new arXiv papers harvested
+   - It writes today's digest and, for Claude-mode topics, the candidates for the review
+   - If it says "Today's digest already has papers", the scheduled job has already run today
+     (a re-run of setup on an existing installation); that is fine, move on to the dry run
 
 2. **Test API keys:**
    - If SerpAPI key provided, verify it's valid format
@@ -261,10 +307,14 @@ Run validation checks:
    - Verify can write to research_root
    - Verify can write to .research-data
 
-4. **Run test search** (optional):
-   - Fetch 1-2 papers from first keyword
-   - Show sample result
-   - Confirm it's working
+4. **Run the keyword dry run** and walk through it with the user:
+   ```bash
+   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/utilities/keyword_dryrun.py
+   ```
+   - For each topic it shows papers per day in its categories and, per keyword, hits per
+     day with sample titles; a keyword flagged `high volume` is probably matching a
+     different meaning and needs a category or a narrower phrase
+   - Offer to adjust keywords, categories or mode in keywords.md before finishing
 
 ## Step 9: Success Summary
 
@@ -287,9 +337,11 @@ Next Steps:
 1. Customize keywords: edit [research_root]/.research-data/keywords.md
 2. Wait for first paper fetch (tomorrow at [fetch_time])
    OR run manually: cd ${CLAUDE_PLUGIN_ROOT}/scripts/automation && python3 fetch_papers.py
-3. Download PDFs of interest to topic Sources/ folders
-4. Run /generate-research-digest to create summaries
-5. Run /filter-research-digest on Sunday digests to remove irrelevant papers
+3. Each morning run /generate-research-digest: it has Claude read the candidates for
+   your Claude-mode topics and creates research-today.md
+4. Download PDFs of interest to topic Sources/ folders; the evening job queues them for summaries
+5. On Sundays run /filter-research-digest after /generate-research-digest to trim the Google Scholar results
+6. Run /test-keywords any time to see what your keywords are matching, and /configure-topics to change a topic's categories or mode later
 
 If cron jobs break after Claude Code updates:
 - Run /fix-scheduled-scripts to repair the symlink
@@ -319,6 +371,7 @@ Logs will be saved to:
 ## Notes
 
 - Setup creates config.yaml and keywords.md from scratch (overwrites if exist)
+- No network access until Step 8; category volumes come from `config/arxiv-categories.md`
 - Cron jobs are appended to existing crontab (doesn't remove other jobs)
 - Cron jobs use a stable symlink path that survives plugin directory changes
 - If plugin moves, run /fix-scheduled-scripts to update the symlink

@@ -1,20 +1,34 @@
 #!/usr/bin/env python3
 """
-Fetch papers from arXiv and Google Scholar based on keywords.
-Generates daily digest in markdown format.
+Fetch papers from arXiv and Google Scholar and write the daily digest.
+
+arXiv: one OAI-PMH harvest of everything new since the last run (see arxiv_harvest.py),
+then per-topic matching. A topic in keyword mode gets whole-word keyword matches; a topic
+in Claude mode gets its new papers recorded as candidates for the Claude review that
+/generate-research-digest runs; "both" does both. Google Scholar runs on Sundays, by
+keyword, unchanged.
 """
 
-import os
-import sys
-import yaml
+import argparse
 import json
-import time
 import logging
+import re
+import sys
+import time
 import warnings
-import arxiv
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+
 import serpapi
+
+from arxiv_harvest import HarvestError, HarvestStore, harvest, utc_today
+from config import data_dir as config_data_dir, load_config
+from digest import TopicSection, has_content, paper_entry, write_digest
+from keyword_match import QueryError, parse as parse_keyword
+from topics import load_topics
+
+CANDIDATES_DIR = "claude-candidates"
+CANDIDATES_KEEP_DAYS = 7
 
 
 def setup_logging():
@@ -22,22 +36,17 @@ def setup_logging():
 
     The crontab entry redirects stdout and stderr into fetch_papers.log, so the
     script must not also write to that file itself or every line lands twice.
-    Library loggers (arxiv, urllib3) are held at WARNING so their per-request
-    chatter stays out of the log; the script's own print() lines already record
-    each query and each 429 wait.
+    urllib3 is held at WARNING so its per-request chatter stays out of the log.
     """
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s [%(levelname)s] %(message)s',
         handlers=[logging.StreamHandler(sys.stdout)]
     )
-    logging.getLogger('arxiv').setLevel(logging.WARNING)
     logging.getLogger('urllib3').setLevel(logging.WARNING)
 
-    # Redirect warnings to the logging system
     logging.captureWarnings(True)
 
-    # Also capture any warnings that bypass the logging system
     def warning_handler(message, category, filename, lineno, file=None, line=None):
         logging.warning(f"{category.__name__}: {message} ({filename}:{lineno})")
 
@@ -46,88 +55,20 @@ def setup_logging():
     return logging.getLogger(__name__)
 
 
-class RateLimitAbort(Exception):
-    """Raised when arXiv rate limiting persists after all retries exhausted.
-
-    Carries the papers found for the topic's earlier keywords so the caller can
-    still put them in the digest; they are already recorded as seen, so dropping
-    them here would lose them for good.
-    """
-    def __init__(self, topic, keyword, query_num, total_queries, partial_papers=None):
-        self.topic = topic
-        self.keyword = keyword
-        self.query_num = query_num
-        self.total_queries = total_queries
-        self.partial_papers = partial_papers or []
-        super().__init__(f"Rate limit abort at query {query_num}/{total_queries}: {keyword}")
-
-def load_config():
-    """Load configuration from config.yaml"""
-    # Config stored outside plugin directory to survive updates
-    config_path = Path.home() / ".claude" / "research-system-config" / "config.yaml"
-
-    if not config_path.exists():
-        raise FileNotFoundError(
-            f"Config file not found at {config_path}\n"
-            f"Please create ~/.claude/research-system-config/config.yaml\n"
-            f"See the plugin's config/config.template.yaml for reference."
-        )
-
-    with open(config_path, 'r') as f:
-        config = yaml.safe_load(f)
-
-    # Validate research_root path
-    research_root = Path(config['paths']['research_root']).expanduser().resolve()
-    if not research_root.exists():
-        raise ValueError(f"research_root does not exist: {research_root}\nPlease check your config.yaml file.")
-    if not research_root.is_dir():
-        raise ValueError(f"research_root is not a directory: {research_root}\nPlease check your config.yaml file.")
-
-    return config
-
-def load_keywords(research_root):
-    """Parse keywords.md and extract topics with their keywords"""
-    # Keywords stored in research root's .research-data directory
-    keywords_path = Path(research_root) / ".research-data" / "keywords.md"
-
-    if not keywords_path.exists():
-        raise FileNotFoundError(
-            f"Keywords file not found at {keywords_path}\n"
-            f"Please run /setup-research-automation to create keywords file."
-        )
-
-    topics = {}
-    current_topic = None
-
-    with open(keywords_path, 'r') as f:
-        for line in f:
-            line = line.strip()
-            if line.startswith('## '):
-                current_topic = line[3:].strip()
-                topics[current_topic] = []
-            elif line.startswith('- ') and current_topic:
-                keyword = line[2:].strip()
-                topics[current_topic].append(keyword)
-
-    return topics
-
 def load_seen_arxiv_papers(config):
     """Load previously seen arXiv papers from tracking file"""
-    research_root = Path(config['paths']['research_root']).expanduser().resolve()
-    data_dir = research_root / config['paths']['data']
-    tracking_file = data_dir / ".seen_arxiv_papers.json"
+    tracking_file = config_data_dir(config) / ".seen_arxiv_papers.json"
 
     if tracking_file.exists():
         with open(tracking_file, 'r') as f:
             data = json.load(f)
             return set(data.get('urls', []))
     return set()
+
 
 def save_seen_arxiv_papers(config, seen_urls):
     """Save seen arXiv papers to tracking file"""
-    research_root = Path(config['paths']['research_root']).expanduser().resolve()
-    data_dir = research_root / config['paths']['data']
-    tracking_file = data_dir / ".seen_arxiv_papers.json"
+    tracking_file = config_data_dir(config) / ".seen_arxiv_papers.json"
 
     with open(tracking_file, 'w') as f:
         json.dump({
@@ -135,167 +76,10 @@ def save_seen_arxiv_papers(config, seen_urls):
             'last_updated': datetime.now().isoformat()
         }, f, indent=2)
 
-def search_arxiv(keywords, config, max_results=10, days_back=1, topic_name=None, global_query_offset=0, total_global_queries=0):
-    """Search arXiv for papers matching keywords.
-
-    Args:
-        keywords: List of search keywords
-        config: Configuration dict
-        max_results: Max results per keyword
-        days_back: Only include papers from last N days
-        topic_name: Name of current topic (for error reporting)
-        global_query_offset: Number of queries already completed in this run
-        total_global_queries: Total queries planned for entire run
-
-    Returns:
-        List of paper dicts
-
-    Raises:
-        RateLimitAbort: If 429 errors persist after all retries exhausted
-    """
-    # Search each keyword separately and combine results
-    # This prevents overly broad OR queries
-    all_papers = []
-    seen_urls = set()
-
-    # Load previously seen papers to avoid duplicates across runs
-    previously_seen = load_seen_arxiv_papers(config)
-
-    # 429 retry delays: 1 minute, 5 minutes, 10 minutes
-    RATE_LIMIT_DELAYS = [60, 300, 600]
-
-    # Create a single client instance to reuse across all queries
-    # This is the recommended approach per arxiv.py documentation
-    client = arxiv.Client()
-
-    for i, keyword in enumerate(keywords, 1):
-        global_query_num = global_query_offset + i
-        print(f"  [arXiv {i}/{len(keywords)}] Searching: {keyword[:80]}...", flush=True)
-
-        # Respect arXiv rate limit: 10 seconds between requests to avoid 429 errors
-        if i > 1:
-            time.sleep(10)
-
-        # Track if we succeeded for this keyword
-        query_succeeded = False
-
-        # Retry logic for 503 errors (quick retries)
-        max_503_retries = 3
-        retry_delay_503 = 5  # Start with 5 seconds
-
-        for attempt_503 in range(max_503_retries):
-            try:
-                # Use the keyword as-is (assumes each line is a complete search)
-                search = arxiv.Search(
-                    query=keyword,
-                    max_results=max_results,
-                    sort_by=arxiv.SortCriterion.SubmittedDate
-                )
-
-                for result in client.results(search):
-                    # Skip duplicates (both from this run and previous runs)
-                    if result.entry_id in seen_urls or result.entry_id in previously_seen:
-                        continue
-
-                    # Only include papers from last N days
-                    days_old = (datetime.now() - result.published.replace(tzinfo=None)).days
-                    if days_old <= days_back:
-                        all_papers.append({
-                            'title': result.title,
-                            'authors': ', '.join([author.name for author in result.authors]),
-                            'year': result.published.year,
-                            'abstract': result.summary.replace('\n', ' '),
-                            'url': result.entry_id,
-                            'pdf_url': result.pdf_url,
-                            'source': 'arXiv'
-                        })
-                        seen_urls.add(result.entry_id)
-
-                # If successful, break out of retry loop
-                query_succeeded = True
-                break
-
-            except Exception as e:
-                error_str = str(e)
-
-                # Handle 429 rate limit errors with longer backoff
-                if '429' in error_str:
-                    # Try the 429 retry sequence: 1min, 5min, 10min
-                    for retry_num, delay in enumerate(RATE_LIMIT_DELAYS):
-                        delay_mins = delay // 60
-                        print(f"    429 rate limit, waiting {delay_mins} minute(s) (attempt {retry_num + 1}/{len(RATE_LIMIT_DELAYS)})...", flush=True)
-                        time.sleep(delay)
-
-                        try:
-                            search = arxiv.Search(
-                                query=keyword,
-                                max_results=max_results,
-                                sort_by=arxiv.SortCriterion.SubmittedDate
-                            )
-
-                            for result in client.results(search):
-                                if result.entry_id in seen_urls or result.entry_id in previously_seen:
-                                    continue
-                                days_old = (datetime.now() - result.published.replace(tzinfo=None)).days
-                                if days_old <= days_back:
-                                    all_papers.append({
-                                        'title': result.title,
-                                        'authors': ', '.join([author.name for author in result.authors]),
-                                        'year': result.published.year,
-                                        'abstract': result.summary.replace('\n', ' '),
-                                        'url': result.entry_id,
-                                        'pdf_url': result.pdf_url,
-                                        'source': 'arXiv'
-                                    })
-                                    seen_urls.add(result.entry_id)
-
-                            # Success after retry
-                            print(f"    Retry successful after {delay_mins} minute wait", flush=True)
-                            query_succeeded = True
-                            break
-
-                        except Exception as retry_e:
-                            if '429' not in str(retry_e):
-                                # Different error, re-raise
-                                raise retry_e
-                            # Still 429, continue to next delay
-                            continue
-
-                    if query_succeeded:
-                        break  # Break out of 503 retry loop too
-
-                    # All 429 retries exhausted - save what we have and abort
-                    all_seen = previously_seen.union(seen_urls)
-                    save_seen_arxiv_papers(config, all_seen)
-
-                    raise RateLimitAbort(
-                        topic=topic_name or "Unknown",
-                        keyword=keyword,
-                        query_num=global_query_num,
-                        total_queries=total_global_queries,
-                        partial_papers=all_papers
-                    )
-
-                # Handle 503 errors with quick retries
-                elif '503' in error_str and attempt_503 < max_503_retries - 1:
-                    print(f"    503 error, retrying in {retry_delay_503}s (attempt {attempt_503 + 1}/{max_503_retries})...", flush=True)
-                    time.sleep(retry_delay_503)
-                    retry_delay_503 *= 2  # Exponential backoff
-                else:
-                    # Unknown error or final 503 attempt, raise
-                    raise
-
-    # Save all seen URLs (merge with previously seen)
-    all_seen = previously_seen.union(seen_urls)
-    save_seen_arxiv_papers(config, all_seen)
-
-    return all_papers
 
 def load_seen_papers(config):
     """Load previously seen Google Scholar papers from tracking file"""
-    research_root = Path(config['paths']['research_root']).expanduser().resolve()
-    data_dir = research_root / config['paths']['data']
-    tracking_file = data_dir / ".seen_scholar_papers.json"
+    tracking_file = config_data_dir(config) / ".seen_scholar_papers.json"
 
     if tracking_file.exists():
         with open(tracking_file, 'r') as f:
@@ -303,11 +87,10 @@ def load_seen_papers(config):
             return set(data.get('urls', []))
     return set()
 
+
 def save_seen_papers(config, seen_urls):
-    """Load previously seen Google Scholar papers from tracking file"""
-    research_root = Path(config['paths']['research_root']).expanduser().resolve()
-    data_dir = research_root / config['paths']['data']
-    tracking_file = data_dir / ".seen_scholar_papers.json"
+    """Save seen Google Scholar papers to tracking file"""
+    tracking_file = config_data_dir(config) / ".seen_scholar_papers.json"
 
     with open(tracking_file, 'w') as f:
         json.dump({
@@ -315,10 +98,9 @@ def save_seen_papers(config, seen_urls):
             'last_updated': datetime.now().isoformat()
         }, f, indent=2)
 
+
 def search_google_scholar(keywords, config, api_key, max_results=5, days_back=7):
     """Search Google Scholar for papers matching keywords"""
-    import re
-
     # Search each keyword separately and combine results
     # This prevents overly broad OR queries
     all_papers = []
@@ -387,198 +169,266 @@ def search_google_scholar(keywords, config, api_key, max_results=5, days_back=7)
 
     return all_papers
 
-def generate_digest(topics_papers, output_path, rate_limit_note=None, total_keywords=0,
-                    arxiv_queries_completed=None):
-    """Generate markdown digest from papers grouped by topic.
 
-    Args:
-        topics_papers: Dict mapping topic names to lists of paper dicts
-        output_path: Path to write the digest file
-        rate_limit_note: Optional note about rate limiting to include at top of digest
-        total_keywords: Total number of arXiv keyword searches planned across all topics
-        arxiv_queries_completed: Number of arXiv keyword searches that actually ran, or
-            None when every search ran. Used to word the empty-digest message honestly.
+def today_is_sunday():
+    return datetime.now().weekday() == 6
+
+
+def scrub_secrets(message):
+    """Hide an API key that a library error message may carry in a URL."""
+    return re.sub(r'api_key=[^&\s]+', 'api_key=***', message)
+
+
+def load_unprocessed_candidates(config, today):
+    """{topic name: [paper ids]} from today's candidates file when the Claude review has not run.
+
+    A second run on the same day must not lose them: the harvest store already knows
+    the papers, so they would not come back as new, and they are already marked seen.
     """
-    today = datetime.now().strftime('%Y-%m-%d')
+    path = config_data_dir(config) / CANDIDATES_DIR / f"{today}.json"
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text())
+    except ValueError as e:
+        logging.getLogger(__name__).warning("Candidates file %s unreadable (%s); ignored", path, e)
+        return {}
+    if data.get("processed_at"):
+        return {}
+    return {topic.get("name"): list(topic.get("paper_ids", [])) for topic in data.get("topics", [])}
 
-    content = [f"# Research Digest - {today}\n"]
 
-    # Add rate limit warning if present
-    if rate_limit_note:
-        content.append(f"\n> **Note:** {rate_limit_note}\n")
+def compile_keywords(topic):
+    """Parse a topic's keywords. Returns (queries, problems); problems are strings
+    naming the topic and the keyword, for the log and the digest note."""
+    queries, problems = [], []
+    for keyword in topic.keywords:
+        try:
+            queries.append(parse_keyword(keyword))
+        except QueryError as e:
+            problems.append(f'topic "{topic.name}", keyword {keyword!r}: {e}')
+    return queries, problems
 
-    # Check if all searches returned 0 results
-    total_papers = sum(len(papers) for papers in topics_papers.values())
-    if total_papers == 0:
-        content.append("\n**No papers found today.**\n")
-        if arxiv_queries_completed is not None and arxiv_queries_completed < total_keywords:
-            # The run was cut short, so "all searches returned 0 results" would be false
-            content.append(
-                f"\narXiv searches were cut short by rate limiting: "
-                f"{arxiv_queries_completed} of {total_keywords} keyword searches completed "
-                f"before the abort (see the note above).\n"
-            )
-        else:
-            content.append("\nAll searches returned 0 results. This can happen when:\n")
-            content.append("- No new papers were published matching your keywords\n")
-            content.append("- arXiv had no new submissions in your research areas\n")
-            content.append("- The `days_back` setting is filtering out older papers\n")
-            content.append(f"\nSearched {total_keywords} keywords across {len(topics_papers)} topics.\n")
 
-    for topic, papers in topics_papers.items():
-        if not papers:
+def match_topic(topic, new_papers, queries, seen_urls):
+    """Split the topic's pool of new papers into keyword matches and Claude candidates."""
+    pool = [p for p in new_papers if p.in_categories(topic.categories) and p.url not in seen_urls]
+    matched = [p for p in pool if topic.uses_keywords and any(q.matches(p) for q in queries)]
+    matched_ids = {p.id for p in matched}
+    candidates = [p for p in pool if topic.uses_claude and p.id not in matched_ids]
+    return pool, matched, candidates
+
+
+def looking_for_text(topic, config):
+    """The review brief for a Claude-mode topic; falls back to the config's filter criteria."""
+    if topic.looking_for:
+        return topic.looking_for
+    filt = config.get('filter') or {}
+    parts = [f'Papers relevant to the topic "{topic.name}".']
+    if filt.get('relevance_criteria'):
+        parts.append(filt['relevance_criteria'])
+    if filt.get('relevant_topics'):
+        parts.append("Relevant topics: " + ", ".join(filt['relevant_topics']) + ".")
+    return " ".join(parts)
+
+
+def write_candidates(config, today, store, topic_candidates, digest_path):
+    """Record the Claude-mode candidates for /generate-research-digest.
+
+    topic_candidates is a list of (Topic, [paper id, ...]). Returns the path written, or None.
+    """
+    if not any(ids for _, ids in topic_candidates):
+        return None
+    candidates_dir = config_data_dir(config) / CANDIDATES_DIR
+    candidates_dir.mkdir(parents=True, exist_ok=True)
+    filt = config.get('filter') or {}
+    payload = {
+        'date': today,
+        'created_at': datetime.now(timezone.utc).isoformat(),
+        'data_dir': str(store.data_dir),
+        'digest_path': str(digest_path),
+        'topics': [
+            {
+                'name': topic.name,
+                'looking_for': looking_for_text(topic, config),
+                'exclude': list(filt.get('irrelevant_topics') or []),
+                'paper_ids': ids,
+            }
+            for topic, ids in topic_candidates if ids
+        ],
+    }
+    path = candidates_dir / f"{today}.json"
+    path.write_text(json.dumps(payload, indent=2))
+    return path
+
+
+def prune_candidates(config, today_utc, keep_days=CANDIDATES_KEEP_DAYS):
+    candidates_dir = config_data_dir(config) / CANDIDATES_DIR
+    if not candidates_dir.exists():
+        return
+    cutoff = today_utc - timedelta(days=keep_days)
+    for path in candidates_dir.glob("*.json"):
+        try:
+            if datetime.strptime(path.stem, "%Y-%m-%d").date() < cutoff:
+                path.unlink()
+        except ValueError:
             continue
 
-        content.append(f"\n## {topic}\n")
 
-        for paper in papers:
-            content.append(f"\n### {paper['title']}\n")
-            content.append(f"**Authors:** {paper['authors']}  \n")
-            content.append(f"**Year:** {paper['year']}")
+def parse_args(argv):
+    parser = argparse.ArgumentParser(description="Harvest arXiv, search Google Scholar on Sundays, write today's digest.")
+    parser.add_argument("--force", action="store_true",
+                        help="rebuild today's digest even though one with papers already exists")
+    return parser.parse_args(argv)
 
-            if paper['source'] == 'Google Scholar' and paper.get('citations'):
-                content.append(f" | **Citations:** {paper['citations']}")
 
-            content.append("  \n")
-
-            # Add abstract or snippet
-            if 'abstract' in paper:
-                # Truncate long abstracts
-                abstract = paper['abstract'][:300] + '...' if len(paper['abstract']) > 300 else paper['abstract']
-                content.append(f"**Abstract:** {abstract}\n")
-            elif 'snippet' in paper:
-                content.append(f"**Snippet:** {paper['snippet']}\n")
-
-            # Add links
-            links = [f"[View Paper]({paper['url']})"]
-            if 'pdf_url' in paper:
-                links.append(f"[PDF]({paper['pdf_url']})")
-            content.append(' | '.join(links) + '\n')
-            content.append('\n---\n')
-
-    # Write to file
-    with open(output_path, 'w') as f:
-        f.write(''.join(content))
-
-    return len([p for papers in topics_papers.values() for p in papers])
-
-def main():
-    # Load configuration
+def main(argv=None):
+    opts = parse_args(argv)
     config = load_config()
-
-    # Setup logging to capture warnings and errors
     logger = setup_logging()
     logger.info("Starting fetch_papers.py")
 
-    # Load keywords by topic
-    research_root = config['paths']['research_root']
-    topics = load_keywords(research_root)
+    if config.get('arxiv'):
+        logger.warning("config.yaml: the 'arxiv' section (max_results, days_back) is no longer used; "
+                       "arXiv is harvested in full and matched per topic")
 
-    print(f"Found {len(topics)} topics with keywords", flush=True)
+    research_root = Path(config['paths']['research_root']).expanduser().resolve()
+    topics = load_topics(config_data_dir(config) / "keywords.md")
+    for topic in topics:
+        for warning in topic.warnings:
+            logger.warning('topic "%s": %s', topic.name, warning)
+    print(f"Found {len(topics)} topics", flush=True)
 
-    # Calculate total queries for progress tracking
-    total_arxiv_queries = sum(len(keywords) for keywords in topics.values())
-
-    # Determine which sources to search
-    is_weekly = datetime.now().weekday() == 6  # Sunday = weekly Google Scholar search
-
-    # Fetch papers for each topic
-    topics_papers = {}
-    arxiv_aborted = False
-    rate_limit_abort = None  # the RateLimitAbort raised this run, if any
-    arxiv_queries_completed = None  # None means every arXiv query ran
-    scholar_failures = 0
-    global_query_offset = 0
-
-    for topic_num, (topic, keywords) in enumerate(topics.items(), 1):
-        print(f"\n[{topic_num}/{len(topics)}] Searching for '{topic}' ({len(keywords)} keywords)...", flush=True)
-        papers = []
-
-        # Search arXiv (daily) unless an earlier topic exhausted the 429 retries.
-        # A 429 throttles the whole client, so once the retry ladder fails there is
-        # no point sending more arXiv queries this run. Google Scholar is a separate
-        # service and still runs for every topic below.
-        if arxiv_aborted:
-            print("  Skipping arXiv (rate limit abort earlier in this run)", flush=True)
-        else:
-            try:
-                arxiv_days = config['arxiv'].get('days_back', 1)  # Default to 1 day
-                arxiv_papers = search_arxiv(
-                    keywords,
-                    config,
-                    config['arxiv']['max_results'],
-                    arxiv_days,
-                    topic_name=topic,
-                    global_query_offset=global_query_offset,
-                    total_global_queries=total_arxiv_queries
-                )
-                papers.extend(arxiv_papers)
-                print(f"  Found {len(arxiv_papers)} papers from arXiv", flush=True)
-                global_query_offset += len(keywords)
-
-            except RateLimitAbort as e:
-                print("  ✗ arXiv rate limit exceeded after retries. Skipping arXiv for remaining topics.", flush=True)
-                papers.extend(e.partial_papers)
-                print(f"  Kept {len(e.partial_papers)} papers from arXiv found before the abort", flush=True)
-                arxiv_aborted = True
-                rate_limit_abort = e
-                arxiv_queries_completed = e.query_num - 1
-
-            except Exception as e:
-                print(f"  Error searching arXiv: {e}", flush=True)
-                global_query_offset += len(keywords)
-
-        # Search Google Scholar (weekly only)
-        if is_weekly:
-            try:
-                scholar_papers = search_google_scholar(
-                    keywords,
-                    config,
-                    config['serpapi']['api_key'],
-                    config['google_scholar']['max_results'],
-                    config['google_scholar']['search_days']
-                )
-                papers.extend(scholar_papers)
-                print(f"  Found {len(scholar_papers)} papers from Google Scholar", flush=True)
-            except Exception as e:
-                print(f"  Error searching Google Scholar: {e}", flush=True)
-                scholar_failures += 1
-
-        topics_papers[topic] = papers
-
-    # Word the rate-limit note once every topic has run, so what it says about
-    # Google Scholar reflects what actually happened
-    rate_limit_note = None
-    if rate_limit_abort:
-        rate_limit_note = (
-            f"arXiv rate limiting encountered at topic \"{rate_limit_abort.topic}\" "
-            f"(query {rate_limit_abort.query_num} of {rate_limit_abort.total_queries}). "
-            f"arXiv results from that query onward are missing."
-        )
-        if is_weekly and scholar_failures:
-            rate_limit_note += (
-                f" Google Scholar also failed for {scholar_failures} of {len(topics)} topics; "
-                f"see fetch_papers.log."
-            )
-        elif is_weekly:
-            rate_limit_note += " Google Scholar results are unaffected."
-
-    # Generate digest
     today = datetime.now().strftime('%Y-%m-%d')
-    digest_path = Path(config['paths']['research_root']) / config['paths']['daily_digests'] / f"{today}.md"
+    today_utc = utc_today()
+    is_weekly = today_is_sunday()
+    notes = []
 
-    total_papers = generate_digest(
-        topics_papers, digest_path,
-        rate_limit_note=rate_limit_note,
-        total_keywords=total_arxiv_queries,
-        arxiv_queries_completed=arxiv_queries_completed
-    )
+    digest_path = research_root / config['paths']['daily_digests'] / f"{today}.md"
+    if has_content(digest_path) and not opts.force:
+        print(f"\nToday's digest already has papers: {digest_path}", flush=True)
+        print("  A second run would rebuild it from scratch, and papers already recorded as seen would not "
+              "come back. Nothing was changed. Run /generate-research-digest to complete a pending Claude "
+              "review, or rerun with --force to rebuild the digest anyway.", flush=True)
+        return 1
+    carried = load_unprocessed_candidates(config, today)
 
-    if rate_limit_note:
-        print(f"\n⚠ Generated partial digest with {total_papers} papers: {digest_path}", flush=True)
-        print(f"  {rate_limit_note}", flush=True)
+    # --- arXiv harvest ---------------------------------------------------------
+    store = HarvestStore(config_data_dir(config))
+    from_date, cap_note = store.window_start(today_utc)
+    if cap_note:
+        notes.append(f"arXiv catch-up was capped: {cap_note}.")
+    new_papers = []
+    harvest_failed = None
+    print(f"\nHarvesting arXiv via OAI-PMH from {from_date.isoformat()}...", flush=True)
+    try:
+        records = harvest(from_date)
+    except HarvestError as e:
+        harvest_failed = str(e)
+        print(f"  ✗ arXiv harvest failed: {e}", flush=True)
+        notes.append(f"arXiv harvest failed ({e}). The next run will catch up from {from_date.isoformat()}.")
     else:
-        print(f"\n✓ Generated digest with {total_papers} papers: {digest_path}", flush=True)
+        new_papers = [p for p in records if p.is_new(today_utc)]
+        new_papers = store.add(new_papers)
+        if records:
+            latest = max(p.datestamp for p in records)
+            store.set_last_datestamp(date.fromisoformat(latest))
+        removed = store.prune(today_utc)
+        print(f"  {len(records)} records since {from_date.isoformat()}; {len(new_papers)} new papers not seen before"
+              + (f"; pruned {len(removed)} old harvest file(s)" if removed else ""), flush=True)
+    prune_candidates(config, today_utc)
+
+    # --- per-topic matching ----------------------------------------------------
+    previously_seen = load_seen_arxiv_papers(config)
+    newly_seen = set()
+    sections = []
+    topic_candidates = []  # (topic, candidate papers) in topic order
+    scholar_failures = 0
+    scholar_skipped = 0
+    keyword_problems = []
+
+    for topic_num, topic in enumerate(topics, 1):
+        print(f"\n[{topic_num}/{len(topics)}] '{topic.name}' (mode: {topic.mode}, "
+              f"categories: {', '.join(topic.categories) or 'all'}, {len(topic.keywords)} keywords)", flush=True)
+        queries, problems = compile_keywords(topic)
+        for problem in problems:
+            logger.warning("keyword skipped: %s", problem)
+        keyword_problems.extend(problems)
+
+        # Exclude what earlier topics already took this run, so a paper lands under the
+        # first topic that claims it, as it did when the seen file was saved per topic.
+        pool, matched, candidates = match_topic(topic, new_papers, queries, previously_seen | newly_seen)
+        entries = [paper_entry(p) for p in matched]
+        newly_seen.update(p.url for p in matched)
+        newly_seen.update(p.url for p in candidates)
+        candidate_ids = [p.id for p in candidates]
+        if topic.uses_claude:
+            known_ids = store.known_ids()
+            for pid in carried.get(topic.name, []):
+                if pid in known_ids and pid not in candidate_ids:
+                    candidate_ids.append(pid)
+        topic_candidates.append((topic, candidate_ids))
+        if harvest_failed is None:
+            carried_note = f" (including {len(candidate_ids) - len(candidates)} carried from today's earlier run)" \
+                if len(candidate_ids) > len(candidates) else ""
+            print(f"  arXiv: {len(pool)} new papers in the topic's categories, "
+                  f"{len(matched)} keyword matches, {len(candidate_ids)} for Claude review{carried_note}", flush=True)
+
+        topic_notes = []
+        if is_weekly:
+            if not topic.keywords:
+                scholar_skipped += 1
+                topic_notes.append("Google Scholar skipped for this topic: no keywords")
+                print("  Google Scholar skipped: no keywords", flush=True)
+            else:
+                try:
+                    scholar_papers = search_google_scholar(
+                        topic.keywords,
+                        config,
+                        config['serpapi']['api_key'],
+                        config['google_scholar']['max_results'],
+                        config['google_scholar']['search_days']
+                    )
+                    entries.extend(scholar_papers)
+                    print(f"  Found {len(scholar_papers)} papers from Google Scholar", flush=True)
+                except Exception as e:
+                    print(f"  Error searching Google Scholar: {type(e).__name__}: {scrub_secrets(str(e))}", flush=True)
+                    scholar_failures += 1
+
+        sections.append(TopicSection(topic.name, entries, len(candidate_ids), topic_notes))
+
+    # --- digest ----------------------------------------------------------------
+    if keyword_problems:
+        notes.append("Some keywords use syntax the matcher does not support and were skipped: "
+                     + "; ".join(keyword_problems) + ".")
+    if is_weekly and scholar_failures:
+        notes.append(f"Google Scholar failed for {scholar_failures} of {len(topics)} topics; see fetch_papers.log.")
+    elif is_weekly and harvest_failed:
+        notes.append("Google Scholar results are unaffected.")
+    note = " ".join(notes) if notes else None
+
+    if harvest_failed:
+        empty_message = "arXiv could not be harvested; see the note above."
+    else:
+        empty_message = f"The harvest found {len(new_papers)} new arXiv papers; none matched a topic."
+
+    # The digest is written before the tracking files: if it fails, nothing is marked seen
+    # and the papers come back next run instead of vanishing.
+    total_papers = write_digest(sections, digest_path, note=note, empty_message=empty_message, today=today)
+    save_seen_arxiv_papers(config, previously_seen | newly_seen)
+    candidates_path = write_candidates(config, today, store, topic_candidates, digest_path)
+
+    pending = sum(s.pending for s in sections)
+    marker = "⚠" if note else "✓"
+    print(f"\n{marker} Generated digest with {total_papers} papers: {digest_path}", flush=True)
+    if pending:
+        print(f"  {pending} papers await the Claude review in {candidates_path}; run /generate-research-digest", flush=True)
+    if scholar_skipped:
+        print(f"  Google Scholar skipped for {scholar_skipped} topic(s) without keywords", flush=True)
+    if note:
+        print(f"  {note}", flush=True)
+    return 0
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

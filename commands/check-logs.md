@@ -39,8 +39,9 @@ For each log file that exists:
 2. **Look for key patterns:**
    - Timestamps to identify when scripts last ran
    - Error messages (ERROR, Exception, Traceback, failed)
-   - Success indicators (papers found, digest created, queue updated)
-   - Rate limiting (429, rate limit, too many requests)
+   - Success indicators ("records since", "new papers", "Generated digest", queue updated)
+   - arXiv harvest trouble ("arXiv harvest failed", "retry 1 of 3", "catch-up was capped", "HTTP 503")
+   - Keyword problems ("keyword skipped", "UNSUPPORTED", topic warnings such as "no keywords")
    - File not found errors (indicates broken paths)
 
 ## Step 4: Analyze and Report
@@ -76,7 +77,11 @@ Recent activity:
 ## Common Issues to Flag
 
 **Fetch Papers:**
-- "429" or "rate limit" → arXiv rate limiting, may need longer delays
+- "arXiv harvest failed" → arXiv's OAI-PMH endpoint was unreachable or overloaded; the run wrote a note in the digest and the next run catches up from the same date, nothing to fix unless it repeats for days
+- "catch-up was capped" → the last successful harvest was more than 14 days ago; only the last 14 days were fetched
+- "keyword skipped" → a keyword uses unsupported syntax (`cat:`, `ti:`, `*`); fix it in keywords.md
+- "await the Claude review" → normal for Claude-mode topics; `/generate-research-digest` completes them
+- "config.yaml: the 'arxiv' section ... is no longer used" → harmless; remove the block from config.yaml to silence it
 - "No API key" or "SerpAPI" errors → Google Scholar won't work
 - "file not found" or "No such file" → Run `/fix-scheduled-scripts`
 - No recent entries → Cron job may not be running

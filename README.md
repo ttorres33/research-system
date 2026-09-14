@@ -6,13 +6,13 @@ Automated research paper discovery, PDF monitoring, and AI-powered summarization
 
 The Research System automates your research workflow in a simple daily cycle:
 
-1. **Automated Discovery** - The system searches arXiv and Google Scholar based on your topic/keyword list and creates a daily digest
+1. **Automated Discovery** - Every day the system harvests all new arXiv papers and picks the ones for each of your topics, by keyword, by having Claude read them against a short brief, or both, scoped to the arXiv categories you choose. Google Scholar is searched weekly. The result is a daily digest
 2. **Review & Save** - You review the digest and download PDFs of interesting papers to your topic's `Sources/` folder
 3. **Automatic Summarization** - The system detects new PDFs and generates summaries in the `Notes/` folder
 
 **Sample Daily Workflow:**
 - **Morning (Automated)**: System searches for new papers and creates today's digest
-- **When you start work**: Run `/generate-research-digest` to see today's papers and any new summaries
+- **When you start work**: Run `/generate-research-digest`. It has Claude review the day's candidates for your Claude-mode topics, then shows today's papers and any new summaries
 - **Throughout the day**: Review digest → Download interesting PDFs to `[Topic]/Sources/`
 - **Evening (Automated)**: System detects new PDFs and queues them for summarization
 - **Next day**: Run `/generate-research-digest` again → Get today's papers + yesterday's summaries
@@ -21,7 +21,9 @@ The Research System automates your research workflow in a simple daily cycle:
 
 ## Features
 
-- **Automated Discovery**: Daily arXiv searches + weekly Google Scholar searches
+- **Automated Discovery**: A daily arXiv harvest over OAI-PMH (two to five requests, no API key) plus weekly Google Scholar searches
+- **Per-Topic Picking**: Keyword matching, a Claude review against a short brief, or both, scoped to the arXiv categories you choose
+- **Keyword Dry Run**: `/test-keywords` shows what each keyword matches against the last week of arXiv papers before it reaches a digest
 - **PDF Monitoring**: Automatically detects new PDFs you save to Sources/ folders
 - **AI Summarization**: Generates concise bullet-point summaries with semantic tags
 - **Large PDF Handling**: Automatically splits papers ≥5 MB into sections to avoid context overflow
@@ -58,7 +60,7 @@ In Claude Code:
 The wizard will guide you through:
 - Installing Python dependencies (automated)
 - Configuring research directory location
-- Setting up research topics and keywords
+- Setting up research topics: keywords, arXiv categories, and whether Claude reads new papers for the topic
 - Configuring filter criteria
 - Setting up automated cron jobs
 - Getting a SerpAPI key (optional, for Google Scholar)
@@ -77,6 +79,7 @@ Papers are fetched automatically by cron job, or run manually:
 ```
 
 This command:
+- Has Claude review the arXiv papers waiting for your Claude-mode topics and adds the keepers to today's digest
 - Archives yesterday's `research-today.md` to `research-today-archive/`
 - Generates summaries for new PDFs
 - Creates new `research-today.md` with today's papers and summaries
@@ -86,18 +89,19 @@ This command:
 *Note: The timing below is just one example. During setup, you choose when each automated task runs to fit your schedule.*
 
 ### Automated Tasks
-- **Paper Discovery**: Searches arXiv (daily) and Google Scholar (Sundays), creates digest in `daily-digests/YYYY-MM-DD.md`
+- **Paper Discovery**: Harvests arXiv (daily) and searches Google Scholar (Sundays), writes the digest to `daily-digests/YYYY-MM-DD.md`. Papers for Claude-mode topics wait in the digest for your morning review
 - **PDF Monitoring**: Scans for new PDFs you've saved, queues them for summarization
 
 ### Your Workflow
 1. Run `/generate-research-digest` to:
+   - Have Claude review the day's candidates for Claude-mode topics
    - Generate summaries for new PDFs
    - Create research-today.md with links
 2. Review the digest and download interesting PDFs to topic folders
 
 ### Sunday Special (Google Scholar Day)
 - Large digest (~200-300 papers from Google Scholar)
-- Run `/filter-research-digest` to remove irrelevant papers
+- Run `/generate-research-digest` first, then `/filter-research-digest` to remove irrelevant papers (the filter refuses a digest whose Claude review is still pending)
 - If still too many, run `/update-research-filters` to refine criteria
 
 ## Commands
@@ -111,6 +115,8 @@ This command:
 - `/setup-research-automation` - Configuration wizard
 - `/fix-scheduled-scripts` - Repair cron jobs after plugin directory changes
 - `/fetch-papers` - Manually run paper fetching (instead of waiting for cron)
+- `/test-keywords` - Show what each topic and keyword matches against the last week of arXiv papers
+- `/configure-topics` - Walk through each topic's arXiv categories, mode and Claude brief; converts a pre-0.4 keywords file
 - `/monitor-sources` - Scan for new PDFs and add to summarization queue
 - `/check-logs` - View recent log entries to diagnose issues
 
@@ -164,11 +170,15 @@ research-directory/
 ├── daily-digests/              # Daily paper discovery results
 │   ├── 2025-11-04.md
 │   └── 2025-11-03.md
-├── .research-data/             # Tracking files and logs
+├── .research-data/             # Topics, tracking files and logs
+│   ├── keywords.md             # Your topics: keywords, categories, mode, looking for
 │   ├── .research-queue.json
 │   ├── .seen_arxiv_papers.json
 │   ├── .seen_scholar_papers.json
 │   ├── .processed_pdfs.json
+│   ├── .arxiv_harvest_state.json   # Last arXiv date stamp harvested
+│   ├── arxiv-harvest/          # New arXiv papers, last 7 days (for the dry run and the review)
+│   ├── claude-candidates/      # Papers waiting for the Claude review, per day
 │   ├── fetch_papers.log
 │   └── monitor_sources.log
 ├── [Topic Folders]/            # One per research topic
@@ -181,11 +191,25 @@ research-directory/
 Run `/setup-research-automation` to configure the system interactively. This wizard handles:
 - API keys (SerpAPI for Google Scholar)
 - Research directory location
-- Research topics and keywords
+- Research topics: keywords, arXiv categories, mode (`keywords`, `claude`, or `both`) and, for Claude mode, a short "looking for" brief
 - Filter criteria (business focus, relevant/irrelevant topics)
 - Cron job scheduling
 
-Configuration files are stored in `~/.claude/research-system-config/`.
+The config file lives in `~/.claude/research-system-config/config.yaml`; topics live in
+`{research_root}/.research-data/keywords.md`. Each topic can set `categories:` (which arXiv
+areas to watch), `mode:` and `looking for:`; a topic with no keywords gets no Google Scholar
+search. Keyword matching is whole-word with no stemming. See
+[config/README.md](config/README.md) for every setting and the keyword syntax, and
+[config/arxiv-categories.md](config/arxiv-categories.md) for category codes with their
+daily volumes.
+
+### Upgrading from 0.3
+
+Your existing `keywords.md` keeps working: every topic runs in keyword mode across all of
+arXiv, as before, minus the stemming noise the old search API added. To get the new
+behaviour, run `/configure-topics` once. It reads your topics, shows where their keywords
+actually hit, walks you through categories, mode and a Claude brief for each topic, backs
+up the original file, and writes the new format. Keywords are kept as they are.
 
 ## Requirements
 
@@ -195,7 +219,7 @@ Configuration files are stored in `~/.claude/research-system-config/`.
 
 ## API Usage
 
-- **arXiv**: Free and unlimited
+- **arXiv**: Harvested through OAI-PMH, two to five requests a day, no key needed. arXiv asks for one request every three seconds, which the harvester honours
 - **Google Scholar** (via SerpAPI): Free tier allows 250 searches/month
   - Weekly searches only (Sundays)
   - With 10 topics × 4 Sundays = ~40 searches/month
@@ -205,7 +229,8 @@ Configuration files are stored in `~/.claude/research-system-config/`.
 
 - **Start with 3-5 topics** with 3-5 keywords each
 - **Monitor Sunday digests** - they're largest and show if you need more filtering
-- **Refine filter criteria iteratively** using `/update-research-filters`
+- **Refine filter criteria iteratively** using `/update-research-filters`; refine a Claude-mode topic by editing its `looking for` line
+- **Run `/test-keywords`** after changing keywords: matching is whole-word, so `worker` does not match "workers", and phrases such as "active learning" mean something else in machine learning unless the topic has categories
 - **Check logs** if papers stop appearing: run `/check-logs`
 
 ## Troubleshooting
@@ -226,9 +251,24 @@ After Claude Code updates, the plugin directory may move, breaking cron jobs:
 - Verify PDFs exist in your topic's `Sources/` folders
 
 ### Too many irrelevant papers
-- Run `/filter-research-digest` on large digests
-- Run `/update-research-filters` to refine criteria
-- Adjust keywords to be more specific
+- Run `/configure-topics` to give the topic `categories:` and a mode; generic phrases then stay in the right areas
+- Switch small topics to `mode: claude` with a `looking for` brief
+- Run `/test-keywords` to see which keyword brings the noise, and rephrase it
+- Run `/filter-research-digest` on large Sunday digests and `/update-research-filters` to refine its criteria
+
+### arXiv papers missing from the digest
+- A note at the top of the digest saying the harvest failed means arXiv's OAI-PMH endpoint was down; the next run catches up automatically
+- A line saying papers "await Claude review" means the morning step has not run yet: run `/generate-research-digest`
+- Run `/check-logs` to see the harvest lines from the scheduled runs
+
+## Development
+
+- **How it works**: [scripts/automation/fetch_papers.py](scripts/automation/fetch_papers.py) runs from cron. It harvests arXiv through [arxiv_harvest.py](scripts/automation/arxiv_harvest.py), reads topics with [topics.py](scripts/automation/topics.py), matches keywords with [keyword_match.py](scripts/automation/keyword_match.py), renders the digest with [digest.py](scripts/automation/digest.py), and records Claude-mode candidates. `/generate-research-digest` then runs the review through [scripts/utilities/apply_claude_triage.py](scripts/utilities/apply_claude_triage.py), which prepares batch files for review agents and writes the kept papers back into the digest. Cron does the fetching in plain Python; Claude only runs inside commands.
+- **Tests**: plain `unittest`, no network. See [docs/test.md](docs/test.md).
+  ```bash
+  python3 -m unittest discover -s tests -t . -p "test_*.py"
+  ```
+- **Dependencies**: `requirements.in` lists the direct dependencies; `requirements.txt` is generated from it with `uv pip compile` (command in the file header) and must not be edited by hand.
 
 ## License
 

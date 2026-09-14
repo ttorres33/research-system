@@ -6,33 +6,10 @@ Create queue for PDF summarization.
 
 import os
 import json
-import yaml
 from datetime import datetime
 from pathlib import Path
 
-def load_config():
-    """Load configuration from config.yaml"""
-    # Config stored outside plugin directory to survive updates
-    config_path = Path.home() / ".claude" / "research-system-config" / "config.yaml"
-
-    if not config_path.exists():
-        raise FileNotFoundError(
-            f"Config file not found at {config_path}\n"
-            f"Please create ~/.claude/research-system-config/config.yaml\n"
-            f"See the plugin's config/config.template.yaml for reference."
-        )
-
-    with open(config_path, 'r') as f:
-        config = yaml.safe_load(f)
-
-    # Validate research_root path
-    research_root = Path(config['paths']['research_root']).expanduser().resolve()
-    if not research_root.exists():
-        raise ValueError(f"research_root does not exist: {research_root}\nPlease check your config.yaml file.")
-    if not research_root.is_dir():
-        raise ValueError(f"research_root is not a directory: {research_root}\nPlease check your config.yaml file.")
-
-    return config
+from config import load_config
 
 def get_processed_files(tracking_file):
     """Load list of already processed files"""

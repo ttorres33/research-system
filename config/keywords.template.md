@@ -1,32 +1,63 @@
 # Research Keywords Template
 
-Define your research topics and search keywords here. Each topic can have multiple keyword searches.
+Define your research topics here. Each topic has a name, optional keywords, and two
+optional settings that control how new arXiv papers are picked for it. Google Scholar
+(Sundays) always searches by keyword, so a topic with no keywords gets no Scholar search.
+`/configure-topics` sets the settings interactively and converts an older file.
 
 ## Example Topic: AI & Productivity
+categories: cs.HC, cs.CY, econ.GN
+mode: claude
+looking for: How professionals adopt and work with AI tools and agents in their day-to-day
+  work; effects on productivity, skills and collaboration. Not model benchmarks or
+  training methods.
 - LLM AND "knowledge work"
-- "generative AI" AND workplace
-- "AI productivity" AND business
+- "AI collaboration" AND work
 
 ## Example Topic: User Research
+categories: cs.HC, cs.CY, cs.SE
+mode: both
+looking for: Methods for discovering customer needs: interviews, synthesis, and how AI
+  changes that work.
 - "customer interview" AND (LLM OR AI)
 - "user research" AND automation
 - "interview synthesis"
 
-# Tips for Effective Keywords
+## Example Topic: Synthetic Users
+- "synthetic users"
+- "synthetic consumers"
+- "LLM focus groups"
 
-- **Use AND** to require multiple terms: `"decision making" AND business`
-- **Use quotes** for exact phrases: `"product discovery"`
-- **Combine related terms** in one topic (they're OR'd together automatically)
-- **Be specific** to avoid too many irrelevant papers
-- **Each keyword** gets searched separately (10 results per keyword by default)
+# Settings
+
+- **categories:** arXiv category codes the topic watches, separated by commas. Leave the
+  line out to search all of arXiv, which only makes sense for very specific phrases.
+  Codes and their daily volumes are listed in the plugin's `config/arxiv-categories.md`.
+- **mode:** `keywords` (default) keeps papers that match a keyword; `claude` has Claude
+  read every new paper in the categories against the `looking for` text each morning when
+  you run `/generate-research-digest`; `both` does both.
+- **looking for:** two or three sentences on what you want and what to leave out. Needed
+  for `claude` and `both`. Continuation lines must be indented.
+
+# Keyword syntax
+
+- Matching is **whole-word and case-insensitive with no stemming**: `worker` does not
+  match "workers", and `"AI assistant"` does not match "AI-assisted". Write the forms you mean.
+- **Quotes** for exact phrases: `"product discovery"`
+- **AND** requires both, **OR** either, **ANDNOT** excludes: `"decision making" ANDNOT robotics`
+- **Parentheses** group: `"customer interview" AND (LLM OR AI)`
+- Hyphens are word breaks on both sides: `"AI-assisted"` and `"AI assisted"` are the same.
+- Field prefixes such as `cat:` or `ti:` and the `*` wildcard are not supported; a keyword
+  using them is skipped and reported in the digest.
+- Watch phrases with a second meaning in machine learning: "active learning", "modeling",
+  "decision making" and "scaffolding" match hundreds of technical papers a week unless the
+  topic has categories. Run `/test-keywords` to see what each keyword matches.
 
 # Your Research Topics
 
 ## Topic 1: [Your Topic Name]
-- [keyword search 1]
-- [keyword search 2]
-- [keyword search 3]
-
-## Topic 2: [Your Second Topic]
+categories: [codes]
+mode: [keywords | claude | both]
+looking for: [what you want; leave out for keywords mode]
 - [keyword search 1]
 - [keyword search 2]

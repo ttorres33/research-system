@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/">
+  <responseDate>2026-09-14T18:12:00Z</responseDate>
+  <request>https://oaipmh.arxiv.org/oai</request>
+  <error code='badArgument'>The request includes illegal arguments, is missing required arguments, includes a repeated argument, or values for arguments have an illegal syntax.</error>
+</OAI-PMH>

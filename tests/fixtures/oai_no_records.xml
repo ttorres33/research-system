@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<OAI-PMH xmlns="http://www.openarchives.org/OAI/2.0/">
+  <responseDate>2026-09-14T17:41:20Z</responseDate>
+  <request verb="ListRecords" metadataPrefix="arXivRaw" from="2026-09-12" until="2026-09-12">https://oaipmh.arxiv.org/oai</request>
+  <error code="noRecordsMatch">The combination of the values of the from, until, set and metadataPrefix arguments results in an empty list.</error>
+</OAI-PMH>

@@ -4,7 +4,7 @@
 # (--universal + --python-version keep environment markers so the lockfile
 #  installs on any supported Python >= 3.10, not just the one it was compiled on.
 #  Add -U only for a deliberate upgrade of all pins — needs Teresa's approval.)
-arxiv    # arXiv API client (pulls in lxml + requests)
+requests # arXiv OAI-PMH harvest (replaced the arxiv search-API client, 2026-09-14)
 serpapi  # Official SerpApi client for Google Scholar (replaced sdist-only google-search-results, 2026-07-19)
 PyYAML   # Config file parsing
 pypdf    # PDF processing for summaries
