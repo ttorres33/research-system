@@ -14,6 +14,28 @@ small and large volumes can be split into two: Claude reads the small categories
 keywords cover the large ones. Keywords are kept exactly as they are unless the user asks
 to change one. Nothing is written until the end, and the original file is backed up first.
 
+## How Keywords Match (read before advising on any keyword)
+
+Matching is whole-word and case-insensitive with no stemming: `worker` matches "worker"
+only, not "workers" or "working", and `"AI assistant"` does not match "AI-assisted". This
+is deliberate. The arXiv search API the plugin used before 0.4 stemmed every word across
+title, abstract, authors and comments, so `modeling AND (teaching OR education)` matched
+"world models" plus "teaches", `organizations` matched "organized", and `"AI assistant"
+AND productivity` matched "AI-assisted" plus "production". Those matches were most of the
+off-topic papers in the digests. Whole-word matching removes them, at the price that a
+keyword has to spell out every form it means.
+
+So whenever you draft, rewrite or judge a keyword:
+- Write out the forms you want, joined with OR: `(worker OR workers)`,
+  `("AI assistant" OR "AI assistants")`, `(interview OR interviews OR interviewing)`.
+- Use the phrase people write in abstracts, not a stem or a wildcard: `"knowledge work" OR
+  "knowledge workers"`, never `knowledge work*` (`*` is unsupported).
+- Hyphens are word breaks, so `"AI-assisted"` and `"AI assisted"` are the same keyword.
+- A `no hits` flag in the dry run usually means a missing form, not a wrong idea. A
+  `high volume` flag usually means the phrase has a second meaning and needs categories.
+- Widen deliberately, one form at a time, and check the dry run. Never suggest adding
+  stemming back or matching on word prefixes.
+
 ## Step 1: Load Configuration and the Current Topics
 
 1. Read `~/.claude/research-system-config/config.yaml`. Set
@@ -131,10 +153,10 @@ For each topic, in file order, one at a time:
    half does the Scholar search, so say nothing here.)
 
 7. **Keyword fixes, only if asked.** When Step 2 flagged a keyword as `high volume`,
-   `no hits` or `UNSUPPORTED`, mention it and offer a rewrite (a category restriction
-   usually fixes high volume; whole-word matching means `worker` does not match
-   "workers"; `cat:` and `*` are not supported). Change a keyword only when the user
-   agrees to that exact change.
+   `no hits` or `UNSUPPORTED`, mention it and offer a rewrite following "How Keywords
+   Match" above (a category restriction usually fixes high volume; a missing form,
+   written out with OR, usually fixes no hits; `cat:` and `*` are not supported). Change
+   a keyword only when the user agrees to that exact change.
 
 Do not write anything until every topic is done.
 

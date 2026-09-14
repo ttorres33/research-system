@@ -41,7 +41,10 @@ Walk the user through what stands out:
   and robotics papers). Suggest a category restriction for the topic or a narrower phrase.
 - **Keywords flagged `no hits`** may be fine (specific phrases hit rarely) or may need a
   plural, a synonym, or a hyphen removed. Remind the user that matching is whole-word and
-  case-insensitive with no stemming: `worker` does not match "workers".
+  case-insensitive with no stemming: `worker` does not match "workers". Offer the OR
+  form, `(worker OR workers)`, never stemming or a wildcard: the old arXiv search API
+  stemmed every word across all fields, and that was the source of most off-topic papers
+  in digests, so whole-word matching is strict on purpose.
 - **Keywords flagged `UNSUPPORTED`** use arXiv API syntax the matcher does not support
   (`cat:`, `ti:`, `*`). They are skipped by the daily run until fixed.
 - **Claude review size** is shown per topic and, on the last line, in total: Claude reads

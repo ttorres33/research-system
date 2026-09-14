@@ -102,9 +102,11 @@ actually hit; it backs up the file first and keeps the keywords as they are.
 ### Keyword Syntax
 
 Matching is **whole-word and case-insensitive with no stemming**. `worker` does not match
-"workers"; `"AI assistant"` does not match "AI-assisted". Write the forms you mean. This is
-stricter than the arXiv search API used to be, on purpose: its stemming put papers about
-"world models" under `modeling AND education`.
+"workers"; `"AI assistant"` does not match "AI-assisted". Write out the forms you mean,
+joined with OR: `(worker OR workers)`. This is stricter than the arXiv search API used to
+be, on purpose: its stemming put papers about "world models" under `modeling AND education`
+and "organized" under `organizations`, and those matches were most of the off-topic
+papers in the digests.
 
 - **AND**: Require both terms
   ```

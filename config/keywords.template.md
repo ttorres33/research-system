@@ -47,7 +47,9 @@ looking for: Methods for discovering customer needs: interviews, synthesis, and 
 # Keyword syntax
 
 - Matching is **whole-word and case-insensitive with no stemming**: `worker` does not
-  match "workers", and `"AI assistant"` does not match "AI-assisted". Write the forms you mean.
+  match "workers", and `"AI assistant"` does not match "AI-assisted". Write out the forms
+  you mean, joined with OR: `(worker OR workers)`. This is stricter than the old arXiv
+  search API on purpose: its stemming was the source of most off-topic digest papers.
 - **Quotes** for exact phrases: `"product discovery"`
 - **AND** requires both, **OR** either, **ANDNOT** excludes: `"decision making" ANDNOT robotics`
 - **Parentheses** group: `"customer interview" AND (LLM OR AI)`

@@ -91,6 +91,7 @@ once before this step.
 
    Tips:
    - Matching is whole-word and case-insensitive, with no stemming: "worker" does not match "workers"
+   - Write out each form you want, joined with OR: (worker OR workers)
    - Use quotes for exact phrases: "knowledge work"
    - Use AND to require terms, OR for alternatives, parentheses to group: "customer interview" AND (LLM OR AI)
    - Phrases with a second meaning in machine learning ("active learning", "decision making",
@@ -99,6 +100,13 @@ once before this step.
    Enter keywords one at a time (or 'done' when finished; 'none' for no keywords):
    ```
    Collect until the user says done or none.
+
+   Why there is no stemming, for when the user asks or when you suggest a keyword: the
+   arXiv search API the plugin used before 0.4 stemmed every word across all fields, so
+   `modeling` matched "world models" and `organizations` matched "organized", and those
+   matches produced most of the off-topic papers in digests. Whole-word matching is
+   stricter on purpose. The cost is that a keyword must list every form it means, so
+   suggest `(worker OR workers)` rather than relying on plurals or verb forms being caught.
 
 4. **Categories** for the topic:
    - From the topic name and its keywords, propose 2-5 category codes from
