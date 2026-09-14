@@ -118,6 +118,15 @@ once before this step.
    - If the total is more than 60 a day, or the user chose "all", recommend `keywords`:
      "These categories produce about [N] papers a day, too many for Claude to read each
      morning. I'd suggest keyword mode: the daily run keeps papers matching your keywords."
+   - Before settling on `keywords`, check for mixed volumes: take codes off the top, largest
+     first, until the rest add up to 60 or fewer. If some codes are left and the topic has
+     keywords, propose a split instead of one keyword topic: "[Topic] (LLM filter)" in
+     `claude` mode on the small codes with a brief and no keywords, and "[Topic] (Keyword
+     filter)" in `keywords` mode on the large codes with the keywords exactly as given.
+     Say that Claude reads the small categories every morning, the keywords cover the
+     large ones, Google Scholar searches the keywords once under the keyword half, and the
+     digest shows two sections. If the user agrees, store two topics and ask for the brief
+     (step 6) for the LLM half only.
    - Otherwise recommend `claude`: "These categories produce about [N] papers a day, few
      enough for Claude to read every morning against a short description of what you want.
      That catches papers your keywords would miss."
@@ -249,6 +258,8 @@ research_root/
 ```
 
 For each topic in keywords, create topic folder with Sources/ and Notes/ subdirectories.
+A split pair shares one folder, named after the topic without its ` (LLM filter)` or
+` (Keyword filter)` suffix.
 
 ## Step 7: Setup Cron Jobs
 

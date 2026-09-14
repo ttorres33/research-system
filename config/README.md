@@ -85,6 +85,14 @@ looking for: How professionals adopt and work with AI tools and agents; effects 
 - **Keyword topics claim first.** A paper matched by a keyword goes under the first topic
   whose keyword matches it and is not offered to the Claude review. Claude candidates are
   never claimed by one topic ahead of another.
+- **Mixed volumes: split the topic.** When a topic's categories mix small areas (say cs.HC
+  and cs.CY) with a large one (cs.LG), one mode does not fit both. Make two topics named
+  after the original: `[Topic] (LLM filter)` with `mode: claude`, the small categories, a
+  brief and no keywords; and `[Topic] (Keyword filter)` with `mode: keywords`, the large
+  categories and the keywords. Claude reads the small areas every morning, the keywords
+  cover the large one, Google Scholar runs once under the keyword half, and the digest
+  shows two sections. One topic folder serves both. `/configure-topics` proposes the split
+  when the volumes call for it.
 
 Old-style files with only headings and keywords keep working: every topic defaults to
 `keywords` mode over all of arXiv. Run `/configure-topics` to set the three settings

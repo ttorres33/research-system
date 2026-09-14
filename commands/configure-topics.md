@@ -1,6 +1,6 @@
 ---
 name: configure-topics
-description: Walk through each research topic to set its arXiv categories, mode and Claude brief; converts a pre-0.4 keywords file to the new format
+description: Walk through each research topic to set its arXiv categories, mode and Claude brief; splits a topic whose categories mix small and large volumes; converts a pre-0.4 keywords file to the new format
 allowed-tools: [Read, Write, Bash, AskUserQuestion]
 ---
 
@@ -9,9 +9,10 @@ allowed-tools: [Read, Write, Bash, AskUserQuestion]
 Set or change, topic by topic, which arXiv categories a topic watches, how new papers are
 picked for it (`keywords`, `claude` or `both`), and the brief Claude reads against.
 Existing users upgrading from 0.3 run this once to convert their keywords file. It also
-works on an already-converted file, to change a topic later. Keywords are kept exactly as
-they are unless the user asks to change one. Nothing is written until the end, and the
-original file is backed up first.
+works on an already-converted file, to change a topic later. A topic whose categories mix
+small and large volumes can be split into two: Claude reads the small categories and the
+keywords cover the large ones. Keywords are kept exactly as they are unless the user asks
+to change one. Nothing is written until the end, and the original file is backed up first.
 
 ## Step 1: Load Configuration and the Current Topics
 
@@ -70,7 +71,35 @@ For each topic, in file order, one at a time:
    papers a day). If the topic already has categories, propose keeping them unless the
    evidence disagrees. Store the confirmed list as `categories` (empty for "all").
 
-3. **Mode.** Add up the per-day volumes of the chosen categories:
+3. **Mixed volumes: offer a split.** Sort the confirmed codes by papers per weekday. If
+   the total is over 60 a day, take codes off the top, largest first, until the rest add
+   up to 60 or fewer. When some codes are left and the topic has keywords, propose two
+   topics instead of one topic in keyword mode:
+   ```
+   "AI & Productivity" spans two very different volumes:
+   - cs.HC  Human-Computer Interaction     ~16/day
+   - cs.CY  Computers and Society          ~8/day
+   - cs.LG  Machine Learning               ~80/day
+   About 104 a day in all, too many for Claude, but cs.HC and cs.CY alone are about 24.
+   I'd split it into two topics:
+   - "AI & Productivity (LLM filter)": Claude mode on cs.HC and cs.CY, with a brief
+     and no keywords
+   - "AI & Productivity (Keyword filter)": keyword mode on cs.LG, with your keywords
+     exactly as they are
+   Claude reads the small categories every morning and your keywords cover the large
+   one. Google Scholar searches the keywords once, under the keyword half. The digest
+   shows two sections; your topic folder stays as it is. Split it, or keep one topic in
+   keyword mode?
+   ```
+   Naming is always the original name plus ` (LLM filter)` and ` (Keyword filter)`. If
+   the user agrees: the LLM half takes the small codes, `mode: claude` and a brief
+   (step 5); the keyword half takes the large codes, `mode: keywords` and every keyword
+   verbatim. Steps 4 and 6 do not apply to a split topic; step 7 applies to its keyword
+   half. Do not create a folder for either half. A topic with no keywords cannot be
+   split: offer to drop the large codes, or to write a keyword for them.
+
+4. **Mode.** Skip for a split topic, both halves already have one. Otherwise add up the
+   per-day volumes of the chosen categories:
    - More than 60 a day, or "all": recommend `keywords`. "These categories produce about
      [N] papers a day, too many for Claude to read each morning; keyword mode keeps the
      papers matching your keywords."
@@ -84,7 +113,8 @@ For each topic, in file order, one at a time:
    - If the user picks `keywords` and the topic has no keywords, say it would match
      nothing and ask for at least one keyword or a different mode.
 
-4. **Looking for**, only for `claude` or `both`. Draft two or three sentences from the
+5. **Looking for**, only for `claude` or `both` (for a split topic, only its LLM half).
+   Draft two or three sentences from the
    topic name and keywords, phrased as what to find and what to leave out, and show it:
    ```
    Draft brief for "AI & Productivity":
@@ -96,10 +126,11 @@ For each topic, in file order, one at a time:
    ```
    If a brief already exists, show it and offer to keep it.
 
-5. **No keywords:** say that Google Scholar searches by keyword, so this topic is skipped
-   on Sundays until it has one.
+6. **No keywords:** say that Google Scholar searches by keyword, so this topic is skipped
+   on Sundays until it has one. (The LLM half of a split has none by design; its keyword
+   half does the Scholar search, so say nothing here.)
 
-6. **Keyword fixes, only if asked.** When Step 2 flagged a keyword as `high volume`,
+7. **Keyword fixes, only if asked.** When Step 2 flagged a keyword as `high volume`,
    `no hits` or `UNSUPPORTED`, mention it and offer a rewrite (a category restriction
    usually fixes high volume; whole-word matching means `worker` does not match
    "workers"; `cat:` and `*` are not supported). Change a keyword only when the user
@@ -127,14 +158,28 @@ Do not write anything until every topic is done.
      [continuation lines indented by two spaces]
    - [keyword, exactly as before]
    ```
-3. Verify by parsing it again with `topics.py` (Step 1.2). The topic count and the
-   keywords must match the original; show any warnings and fix them before finishing.
+   A split topic becomes two consecutive sections in place of the original, the LLM half
+   first:
+   ```markdown
+   ## AI & Productivity (LLM filter)
+   categories: cs.HC, cs.CY
+   mode: claude
+   looking for: [the brief]
+
+   ## AI & Productivity (Keyword filter)
+   categories: cs.LG
+   - [every keyword of the original topic, exactly as before]
+   ```
+3. Verify by parsing it again with `topics.py` (Step 1.2). Every original keyword must
+   still be present, and the topic count must be the original plus one for each split;
+   show any warnings and fix them before finishing.
 4. Run the dry run once more (Step 2.2) and show, per topic, the papers per day in its
    categories and, for Claude topics, the number Claude would read.
 
 ## Step 5: Report
 
-For each topic: mode, categories, and the first sentence of the brief. Then:
+For each topic: mode, categories, and the first sentence of the brief; show the two halves
+of a split topic together. Then:
 - Where the backup is
 - That the next scheduled run uses the new settings, and each morning
   `/generate-research-digest` runs the Claude review for Claude-mode topics

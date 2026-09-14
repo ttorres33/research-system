@@ -39,6 +39,10 @@ looking for: Methods for discovering customer needs: interviews, synthesis, and 
   may keep it under every Claude topic it fits.
 - **looking for:** two or three sentences on what you want and what to leave out. Needed
   for `claude` and `both`. Continuation lines must be indented.
+- **Mixed volumes:** when a topic's categories mix a small area with a large one, split it
+  into `[Topic] (LLM filter)` (mode `claude`, the small categories, a brief, no keywords)
+  and `[Topic] (Keyword filter)` (mode `keywords`, the large categories, the keywords).
+  `/configure-topics` proposes this when the volumes call for it.
 
 # Keyword syntax
 

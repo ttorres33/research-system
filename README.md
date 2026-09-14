@@ -209,7 +209,9 @@ Your existing `keywords.md` keeps working: every topic runs in keyword mode acro
 arXiv, as before, minus the stemming noise the old search API added. To get the new
 behaviour, run `/configure-topics` once. It reads your topics, shows where their keywords
 actually hit, walks you through categories, mode and a Claude brief for each topic, backs
-up the original file, and writes the new format. Keywords are kept as they are.
+up the original file, and writes the new format. Keywords are kept as they are. Where a
+topic's categories mix small and large volumes, it offers to split the topic into an
+LLM-filter half and a keyword-filter half.
 
 ## Requirements
 
@@ -228,6 +230,7 @@ up the original file, and writes the new format. Keywords are kept as they are.
 ## Tips
 
 - **Start with 3-5 topics** with 3-5 keywords each
+- **Split a topic whose categories mix small and large volumes**: `[Topic] (LLM filter)` in Claude mode on the small categories, `[Topic] (Keyword filter)` in keyword mode on the large ones. `/configure-topics` proposes the split, and one topic folder serves both
 - **Monitor Sunday digests** - they're largest and show if you need more filtering
 - **Refine filter criteria iteratively** using `/update-research-filters`; refine a Claude-mode topic by editing its `looking for` line
 - **Run `/test-keywords`** after changing keywords: matching is whole-word, so `worker` does not match "workers", and phrases such as "active learning" mean something else in machine learning unless the topic has categories
@@ -252,7 +255,7 @@ After Claude Code updates, the plugin directory may move, breaking cron jobs:
 
 ### Too many irrelevant papers
 - Run `/configure-topics` to give the topic `categories:` and a mode; generic phrases then stay in the right areas
-- Switch small topics to `mode: claude` with a `looking for` brief
+- Switch small topics to `mode: claude` with a `looking for` brief; split a topic that mixes small and large categories into an LLM-filter half and a keyword-filter half
 - Run `/test-keywords` to see which keyword brings the noise, and rephrase it
 - Run `/filter-research-digest` on large Sunday digests and `/update-research-filters` to refine its criteria
 
