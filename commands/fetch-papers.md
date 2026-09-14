@@ -12,8 +12,7 @@ Manually trigger paper fetching from arXiv and Google Scholar instead of waiting
 ## Step 1: Load Configuration
 
 1. Read `~/.claude/research-system-config/config.yaml`
-2. Extract `paths.research_root` for log file location
-3. Set `log_file = research_root + "/.research-data/fetch_papers.log"`
+2. Extract `paths.research_root`; the digest is written to `research_root/daily-digests/YYYY-MM-DD.md`
 
 ## Step 2: Run Fetch Script
 
@@ -47,8 +46,7 @@ Results:
 ```
 
 **If script fails:**
-- Show the error output
-- Suggest checking `log_file` for details
+- Show the error output (a manual run prints everything to the terminal; it does not append to the log file)
 - Common issues:
   - Network connectivity
   - Rate limiting (arXiv 429 errors)
@@ -67,4 +65,4 @@ Results:
 - arXiv searches run every time
 - Results are written to `daily-digests/YYYY-MM-DD.md`
 - Duplicate papers (seen before) are automatically filtered out
-- Check `.research-data/fetch_papers.log` for detailed execution history
+- `.research-data/fetch_papers.log` holds the history of the scheduled (cron) runs only; the crontab redirects each run's output there

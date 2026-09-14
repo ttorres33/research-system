@@ -99,7 +99,7 @@ Define research topics you want to track. Each topic = one section in digests.
    crontab -l | grep research
    ```
 
-3. **Monitor logs**:
+3. **Monitor logs** (the scheduled cron runs write here; a manual test run prints to the terminal instead):
    - `{research_root}/.research-data/fetch_papers.log`
    - `{research_root}/.research-data/monitor_sources.log`
 

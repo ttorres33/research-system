@@ -17,21 +17,22 @@ from pathlib import Path
 import serpapi
 
 
-def setup_logging(config):
-    """Configure logging to capture both stdout and stderr (including warnings)."""
-    research_root = Path(config['paths']['research_root']).expanduser().resolve()
-    data_dir = research_root / config['paths']['data']
-    log_file = data_dir / "fetch_papers.log"
+def setup_logging():
+    """Send log lines and captured warnings to stdout.
 
-    # Configure root logger to capture everything
+    The crontab entry redirects stdout and stderr into fetch_papers.log, so the
+    script must not also write to that file itself or every line lands twice.
+    Library loggers (arxiv, urllib3) are held at WARNING so their per-request
+    chatter stays out of the log; the script's own print() lines already record
+    each query and each 429 wait.
+    """
     logging.basicConfig(
-        level=logging.DEBUG,
+        level=logging.INFO,
         format='%(asctime)s [%(levelname)s] %(message)s',
-        handlers=[
-            logging.FileHandler(log_file, mode='a'),
-            logging.StreamHandler(sys.stdout)
-        ]
+        handlers=[logging.StreamHandler(sys.stdout)]
     )
+    logging.getLogger('arxiv').setLevel(logging.WARNING)
+    logging.getLogger('urllib3').setLevel(logging.WARNING)
 
     # Redirect warnings to the logging system
     logging.captureWarnings(True)
@@ -46,12 +47,18 @@ def setup_logging(config):
 
 
 class RateLimitAbort(Exception):
-    """Raised when arXiv rate limiting persists after all retries exhausted."""
-    def __init__(self, topic, keyword, query_num, total_queries):
+    """Raised when arXiv rate limiting persists after all retries exhausted.
+
+    Carries the papers found for the topic's earlier keywords so the caller can
+    still put them in the digest; they are already recorded as seen, so dropping
+    them here would lose them for good.
+    """
+    def __init__(self, topic, keyword, query_num, total_queries, partial_papers=None):
         self.topic = topic
         self.keyword = keyword
         self.query_num = query_num
         self.total_queries = total_queries
+        self.partial_papers = partial_papers or []
         super().__init__(f"Rate limit abort at query {query_num}/{total_queries}: {keyword}")
 
 def load_config():
@@ -265,7 +272,8 @@ def search_arxiv(keywords, config, max_results=10, days_back=1, topic_name=None,
                         topic=topic_name or "Unknown",
                         keyword=keyword,
                         query_num=global_query_num,
-                        total_queries=total_global_queries
+                        total_queries=total_global_queries,
+                        partial_papers=all_papers
                     )
 
                 # Handle 503 errors with quick retries
@@ -379,14 +387,17 @@ def search_google_scholar(keywords, config, api_key, max_results=5, days_back=7)
 
     return all_papers
 
-def generate_digest(topics_papers, output_path, rate_limit_note=None, total_keywords=0):
+def generate_digest(topics_papers, output_path, rate_limit_note=None, total_keywords=0,
+                    arxiv_queries_completed=None):
     """Generate markdown digest from papers grouped by topic.
 
     Args:
         topics_papers: Dict mapping topic names to lists of paper dicts
         output_path: Path to write the digest file
         rate_limit_note: Optional note about rate limiting to include at top of digest
-        total_keywords: Total number of keywords searched across all topics
+        total_keywords: Total number of arXiv keyword searches planned across all topics
+        arxiv_queries_completed: Number of arXiv keyword searches that actually ran, or
+            None when every search ran. Used to word the empty-digest message honestly.
     """
     today = datetime.now().strftime('%Y-%m-%d')
 
@@ -400,11 +411,19 @@ def generate_digest(topics_papers, output_path, rate_limit_note=None, total_keyw
     total_papers = sum(len(papers) for papers in topics_papers.values())
     if total_papers == 0:
         content.append("\n**No papers found today.**\n")
-        content.append("\nAll searches returned 0 results. This can happen when:\n")
-        content.append("- No new papers were published matching your keywords\n")
-        content.append("- arXiv had no new submissions in your research areas\n")
-        content.append("- The `days_back` setting is filtering out older papers\n")
-        content.append(f"\nSearched {total_keywords} keywords across {len(topics_papers)} topics.\n")
+        if arxiv_queries_completed is not None and arxiv_queries_completed < total_keywords:
+            # The run was cut short, so "all searches returned 0 results" would be false
+            content.append(
+                f"\narXiv searches were cut short by rate limiting: "
+                f"{arxiv_queries_completed} of {total_keywords} keyword searches completed "
+                f"before the abort (see the note above).\n"
+            )
+        else:
+            content.append("\nAll searches returned 0 results. This can happen when:\n")
+            content.append("- No new papers were published matching your keywords\n")
+            content.append("- arXiv had no new submissions in your research areas\n")
+            content.append("- The `days_back` setting is filtering out older papers\n")
+            content.append(f"\nSearched {total_keywords} keywords across {len(topics_papers)} topics.\n")
 
     for topic, papers in topics_papers.items():
         if not papers:
@@ -448,7 +467,7 @@ def main():
     config = load_config()
 
     # Setup logging to capture warnings and errors
-    logger = setup_logging(config)
+    logger = setup_logging()
     logger.info("Starting fetch_papers.py")
 
     # Load keywords by topic
@@ -465,42 +484,49 @@ def main():
 
     # Fetch papers for each topic
     topics_papers = {}
-    rate_limit_note = None
+    arxiv_aborted = False
+    rate_limit_abort = None  # the RateLimitAbort raised this run, if any
+    arxiv_queries_completed = None  # None means every arXiv query ran
+    scholar_failures = 0
     global_query_offset = 0
 
     for topic_num, (topic, keywords) in enumerate(topics.items(), 1):
         print(f"\n[{topic_num}/{len(topics)}] Searching for '{topic}' ({len(keywords)} keywords)...", flush=True)
         papers = []
 
-        # Always search arXiv (daily)
-        try:
-            arxiv_days = config['arxiv'].get('days_back', 1)  # Default to 1 day
-            arxiv_papers = search_arxiv(
-                keywords,
-                config,
-                config['arxiv']['max_results'],
-                arxiv_days,
-                topic_name=topic,
-                global_query_offset=global_query_offset,
-                total_global_queries=total_arxiv_queries
-            )
-            papers.extend(arxiv_papers)
-            print(f"  Found {len(arxiv_papers)} papers from arXiv", flush=True)
-            global_query_offset += len(keywords)
+        # Search arXiv (daily) unless an earlier topic exhausted the 429 retries.
+        # A 429 throttles the whole client, so once the retry ladder fails there is
+        # no point sending more arXiv queries this run. Google Scholar is a separate
+        # service and still runs for every topic below.
+        if arxiv_aborted:
+            print("  Skipping arXiv (rate limit abort earlier in this run)", flush=True)
+        else:
+            try:
+                arxiv_days = config['arxiv'].get('days_back', 1)  # Default to 1 day
+                arxiv_papers = search_arxiv(
+                    keywords,
+                    config,
+                    config['arxiv']['max_results'],
+                    arxiv_days,
+                    topic_name=topic,
+                    global_query_offset=global_query_offset,
+                    total_global_queries=total_arxiv_queries
+                )
+                papers.extend(arxiv_papers)
+                print(f"  Found {len(arxiv_papers)} papers from arXiv", flush=True)
+                global_query_offset += len(keywords)
 
-        except RateLimitAbort as e:
-            print(f"  ✗ arXiv rate limit exceeded after retries. Aborting remaining queries.", flush=True)
-            rate_limit_note = (
-                f"arXiv rate limiting encountered at topic \"{e.topic}\" "
-                f"(query {e.query_num} of {e.total_queries}). "
-                f"Papers from remaining topics may be incomplete."
-            )
-            topics_papers[topic] = papers
-            break  # Exit the topic loop entirely
+            except RateLimitAbort as e:
+                print("  ✗ arXiv rate limit exceeded after retries. Skipping arXiv for remaining topics.", flush=True)
+                papers.extend(e.partial_papers)
+                print(f"  Kept {len(e.partial_papers)} papers from arXiv found before the abort", flush=True)
+                arxiv_aborted = True
+                rate_limit_abort = e
+                arxiv_queries_completed = e.query_num - 1
 
-        except Exception as e:
-            print(f"  Error searching arXiv: {e}", flush=True)
-            global_query_offset += len(keywords)
+            except Exception as e:
+                print(f"  Error searching arXiv: {e}", flush=True)
+                global_query_offset += len(keywords)
 
         # Search Google Scholar (weekly only)
         if is_weekly:
@@ -516,14 +542,37 @@ def main():
                 print(f"  Found {len(scholar_papers)} papers from Google Scholar", flush=True)
             except Exception as e:
                 print(f"  Error searching Google Scholar: {e}", flush=True)
+                scholar_failures += 1
 
         topics_papers[topic] = papers
+
+    # Word the rate-limit note once every topic has run, so what it says about
+    # Google Scholar reflects what actually happened
+    rate_limit_note = None
+    if rate_limit_abort:
+        rate_limit_note = (
+            f"arXiv rate limiting encountered at topic \"{rate_limit_abort.topic}\" "
+            f"(query {rate_limit_abort.query_num} of {rate_limit_abort.total_queries}). "
+            f"arXiv results from that query onward are missing."
+        )
+        if is_weekly and scholar_failures:
+            rate_limit_note += (
+                f" Google Scholar also failed for {scholar_failures} of {len(topics)} topics; "
+                f"see fetch_papers.log."
+            )
+        elif is_weekly:
+            rate_limit_note += " Google Scholar results are unaffected."
 
     # Generate digest
     today = datetime.now().strftime('%Y-%m-%d')
     digest_path = Path(config['paths']['research_root']) / config['paths']['daily_digests'] / f"{today}.md"
 
-    total_papers = generate_digest(topics_papers, digest_path, rate_limit_note=rate_limit_note, total_keywords=total_arxiv_queries)
+    total_papers = generate_digest(
+        topics_papers, digest_path,
+        rate_limit_note=rate_limit_note,
+        total_keywords=total_arxiv_queries,
+        arxiv_queries_completed=arxiv_queries_completed
+    )
 
     if rate_limit_note:
         print(f"\n⚠ Generated partial digest with {total_papers} papers: {digest_path}", flush=True)
